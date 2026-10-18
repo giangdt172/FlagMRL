@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: NPROC_PER_NODE=2 bash scripts/train/fastvlm_flagmrl_cls.sh --image_dir /data/MMEB-train
+# Usage: bash scripts/train/fastvlm_flagmrl_cls.sh --image_dir /data/MMEB-train
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-exec "${PYTHON:-python}" -m torch.distributed.run \
-    --standalone \
-    --nproc_per_node "${NPROC_PER_NODE:-1}" \
+torchrun \
+    --nproc_per_node=1 \
+    --master_addr=127.0.0.1 \
+    --master_port=29500 \
     train_ddp_one_model.py \
     --model_name "${MODEL_NAME:-apple/FastVLM-0.5B}" \
     --model_backbone llava_qwen2 \
@@ -29,7 +30,7 @@ exec "${PYTHON:-python}" -m torch.distributed.run \
     --flag_use_neg_mask True --flag_far_mode uniform \
     --optimizer_name adamw --learning_rate 5e-5 \
     --lr_scheduler_type cosine --warmup_ratio 0.03 \
-    --num_train_epochs 1 --weight_decay 0.01 \
+    --num_train_epochs 2 --weight_decay 0.01 \
     --bf16 --image_resolution mid \
     --save_strategy epoch --logging_steps 1 --seed 42 \
     --report_to none \
