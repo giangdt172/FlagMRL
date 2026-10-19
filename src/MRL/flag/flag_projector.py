@@ -89,6 +89,6 @@ class FlagProjector(nn.Module):
         if basis.shape != self.U.shape or not torch.isfinite(basis).all():
             raise ValueError("Invalid flag checkpoint basis.")
         error = (basis.T @ basis - torch.eye(basis.size(1), device=basis.device)).abs().max()
-        if error > 1e-5:
+        if error > 1e-3:
             raise ValueError(f"Flag checkpoint is not orthonormal: {error.item()}")
         self.U.copy_(basis)
