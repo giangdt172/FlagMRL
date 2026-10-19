@@ -127,7 +127,7 @@ def score_subset(model, model_args, data_args, args, subset):
         pi = [pindex[key] for key in keys]
         query, candidates = queries[qi], targets[pi]
         _, prediction = get_pred(query, candidates, normalization=model_args.normalize)
-        correct += prediction == 0
+        correct += int(prediction == 0)
         predictions.append(keys[prediction])
         for dim in dims:
             if dim == model.full_dim:
@@ -136,7 +136,7 @@ def score_subset(model, model_args, data_args, args, subset):
                 # Baseline: prefix. FlagMRL: prefix of the learned coordinates X @ U.
                 query_dim, candidates_dim = nested_queries[qi, :dim], nested_targets[pi, :dim]
             _, prediction_dim = get_pred(query_dim, candidates_dim, normalization=model_args.normalize)
-            nested_correct[dim] += prediction_dim == 0
+            nested_correct[dim] += int(prediction_dim == 0)
             nested_predictions[dim].append(keys[prediction_dim])
     result = {"acc": correct / len(rows), "num_correct": correct,
               "num_pred": len(predictions), "num_data": len(rows)}
