@@ -5,9 +5,10 @@ set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-exec "${PYTHON:-python}" -m torch.distributed.run \
-    --standalone \
-    --nproc_per_node "${NPROC_PER_NODE:-1}" \
+torchrun \
+    --nproc_per_node="${NPROC_PER_NODE:-1}" \
+    --master_addr=127.0.0.1 \
+    --master_port=4354 \
     train_ddp_one_model.py \
     --model_name "${MODEL_NAME:-apple/FastVLM-0.5B}" \
     --model_backbone llava_qwen2 \
