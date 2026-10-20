@@ -3,6 +3,7 @@
 import json
 import pickle
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -192,4 +193,6 @@ def main():
 
 
 if __name__ == "__main__":
+    start_time = time.perf_counter()
     main()
+    print(f"Total runtime: {time.perf_counter() - start_time:.2f} seconds", flush=True)

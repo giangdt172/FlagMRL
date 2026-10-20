@@ -335,8 +335,12 @@ def main():
 
 
 if __name__ == "__main__":
+    start_time = time.perf_counter()
     ddp_setup()
+    main_process = is_main_process()
     try:
         main()
     finally:
         destroy_process_group()
+    if main_process:
+        print(f"Total runtime: {time.perf_counter() - start_time:.2f} seconds", flush=True)
