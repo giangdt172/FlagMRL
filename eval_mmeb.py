@@ -21,6 +21,7 @@ from evaluation.mmeb_baselines.eval_utils import get_pred
 from src.model.model import MMEBModel
 from src.model.processor import load_processor
 from src.utils import resolve_nested_dims, to_device
+from src.wandb_logging import WandbLogger
 
 # vlm_embed uses a different ImageNet subset name for evaluation than for training.
 POS_MOD_DICT = {subset: prompt for subset, prompt in TRAIN_POS_MOD_DICT.items() if subset != "ImageNet_1K"}
@@ -179,17 +180,23 @@ def main():
     Path(data_args.encode_output_path).mkdir(parents=True, exist_ok=True)
     model = MMEBModel.load(model_args, is_trainable=False).eval().to(args.device, dtype=torch.bfloat16)
     processor = load_processor(model_args, data_args)
-    evaluation_dims(model, args.nested_dims)
+    dims = evaluation_dims(model, args.nested_dims)
     subsets = data_args.subset_name or [None]
-    # First encode every subset; scoring can subsequently run from the CPU caches.
-    for subset in subsets:
-        if read_score(subset_paths(data_args, subset)["score.json"]) is not None:
-            print(f"Found previous eval score, skipping {subset}")
-            continue
-        encode_subset(model, model_args, data_args, args, processor, subset)
-    for subset in tqdm(subsets, desc="Iterate datasets to calculate scores"):
-        result = score_subset(model, model_args, data_args, args, subset)
-        print(json.dumps({"subset": subset, **result}))
+    with WandbLogger(model_args, data_args, args, "eval", nested_dims=dims) as logger:
+        # First encode every subset; scoring can subsequently run from the CPU caches.
+        for subset in subsets:
+            if read_score(subset_paths(data_args, subset)["score.json"]) is not None:
+                print(f"Found previous eval score, skipping {subset}")
+                continue
+            encode_subset(model, model_args, data_args, args, processor, subset)
+        results = []
+        for subset in tqdm(subsets, desc="Iterate datasets to calculate scores"):
+            cached = read_score(subset_paths(data_args, subset)["score.json"]) is not None
+            result = score_subset(model, model_args, data_args, args, subset)
+            print(json.dumps({"subset": subset, **result}), flush=True)
+            logger.log_eval(subset, result, cached=cached)
+            results.append(result)
+        logger.log_eval_average(results)
 
 
 if __name__ == "__main__":

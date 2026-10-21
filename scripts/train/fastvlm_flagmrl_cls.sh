@@ -33,5 +33,6 @@ torchrun \
     --num_train_epochs 2 --weight_decay 0.01 \
     --bf16 --image_resolution mid \
     --save_strategy epoch --logging_steps 1 --seed 42 \
-    --report_to none \
+    --wandb True \
+    --run_name FlagMRL_FastVLM_cls \
     "$@"

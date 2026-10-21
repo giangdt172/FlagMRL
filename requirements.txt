@@ -18,3 +18,4 @@ decord>=0.6
 requests>=2.28
 packaging>=20
 tqdm>=4.66
+wandb>=0.19,<1

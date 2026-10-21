@@ -18,6 +18,7 @@ from prepare_one_model_training import OneModelTrainer, TrainOneModelCollator, T
 from src.arguments import DataArguments, ModelArguments, TrainingArguments
 from src.MRL import build_criterion
 from src.utils import is_main_process, print_master, to_device, print_rank
+from src.wandb_logging import WandbLogger
 
 
 class CombinedOptimizer(torch.optim.Optimizer):
@@ -196,11 +197,13 @@ def initialize_geneig(module, loader, args):
 
 
 class Trainer:
-    def __init__(self, trainer, train_data, optimizer, lr_scheduler, criterion, model_args, training_args):
+    def __init__(self, trainer, train_data, optimizer, lr_scheduler, criterion, model_args, training_args,
+                 logger=None):
         self.module = trainer
         self.device = trainer.device
         self.train_data, self.optimizer, self.lr_scheduler = train_data, optimizer, lr_scheduler
         self.criterion, self.model_args, self.training_args = criterion, model_args, training_args
+        self.logger = logger
         self.trainer = trainer
         if dist.is_initialized():
             self.trainer = DDP(trainer, device_ids=[self.device.index] if self.device.type == "cuda" else None,
@@ -243,7 +246,9 @@ class Trainer:
                 with (self.output_dir / "metrics.jsonl").open("a") as handle:
                     handle.write(json.dumps(metrics, allow_nan=False) + "\n")
                 if boundary and self.global_step % args.logging_steps == 0:
-                    print_master(f"step={self.global_step} loss={float(loss.detach()):.6f}")
+                    print_master(json.dumps(metrics, allow_nan=False), flush=True)
+                if self.logger is not None:
+                    self.logger.log_train(metrics, commit=boundary and self.global_step % args.logging_steps == 0)
             if self.device.type == "cuda":
                 torch.cuda.empty_cache()
             if args.max_steps > 0 and self.global_step >= args.max_steps:
@@ -334,8 +339,11 @@ def main():
     else:
         scheduler = get_constant_schedule(optimizer)
     criterion = build_criterion(args).to(device)
-    initialize_geneig(module, loader, args)
-    Trainer(module, loader, optimizer, scheduler, criterion, model_args, args).train()
+    projector = getattr(module.model, "flag_projector", None)
+    dims = projector.mrl_dims if projector is not None else args.nested_dims
+    with WandbLogger(model_args, data_args, args, "train", nested_dims=dims) as logger:
+        initialize_geneig(module, loader, args)
+        Trainer(module, loader, optimizer, scheduler, criterion, model_args, args, logger=logger).train()
 
 
 if __name__ == "__main__":

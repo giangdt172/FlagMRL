@@ -18,5 +18,6 @@ exec "${PYTHON:-python}" eval_mmeb.py \
     --encode_output_path "${ENCODE_OUTPUT_PATH:-evaluation/FlagMRL_FastVLM_cls/checkpoint-epoch-0}" \
     --per_device_eval_batch_size 8 \
     --bf16 --image_resolution mid --tgt_prefix_mod \
-    --report_to none \
+    --wandb True \
+    --run_name FlagMRL_FastVLM_cls \
     "$@"

@@ -84,6 +84,7 @@ class TrainingArguments(HFTrainingArguments):
     output_dir: str = field(default=None, metadata={"help": "directory for saving trained models"})
     resume_from: str = field(default="none", metadata={"help": "`auto` will detect if any previous checkpoints should be resumed. or specify specific step of the checkpoint."})
     project_name: str = field(default=None, metadata={"help": "project name"})
+    wandb: bool = field(default=True, metadata={"help": "Send train/eval logs to W&B; terminal and file logs remain enabled."})
     logging_steps: int = field(default=1, metadata={"help": "logging steps"})
     num_train_epochs: int = field(default=1, metadata={"help": "number of training epochs"})
     kd_loss_type: str = field(default="contrastive_rkd", metadata={"help": "type of kd loss, current only support RKD"})
