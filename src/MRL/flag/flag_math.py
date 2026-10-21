@@ -1,17 +1,7 @@
-"""Spherical discrimination, legacy scatter initialization, and FP32 Stiefel steps."""
+"""Spherical discrimination and FP32 Stiefel steps."""
 
 import math
 import torch
-
-
-@torch.no_grad()
-def cov_matmul(Q, P, W, X):
-    """Apply the uncentered weighted difference scatter without pair vectors."""
-    with torch.autocast(device_type=Q.device.type, enabled=False):
-        Q, P, W, X = (t.detach().float() for t in (Q, P, W, X))
-        qx, px = Q @ X, P @ X
-        rows, columns = W.sum(1, keepdim=True), W.sum(0).unsqueeze(1)
-        return Q.T @ (rows * qx - W @ px) + P.T @ (columns * px - W.T @ qx)
 
 
 @torch.no_grad()

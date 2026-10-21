@@ -18,11 +18,12 @@ torchrun \
     --subset_name ImageNet_1K N24News HatefulMemes VOC2007 SUN397 \
     --dataset_split original \
     --image_dir "${TRAIN_IMAGE_DIR:-data/MMEB-train}" \
-    --output_dir "${OUTPUT_DIR:-training/FlagMRL_FastVLM_cls}" \
+    --output_dir "${OUTPUT_DIR:-training/FlagMRL_FastVLM_cls_1}" \
     --per_device_train_batch_size 32 \
     --gradient_accumulation_steps 1 \
     --gradient_checkpointing \
     --kd_loss_type flag_mrl \
+    --loss_gain_weight "${LOSS_GAIN_WEIGHT:-1.0}" \
     --nested_dims 64 128 256 512 768 896 \
     --block_size 64 \
     --flag_init random --flag_lr 0.1 --flag_eps 1e-4 \
@@ -30,9 +31,9 @@ torchrun \
     --flag_lambda_neg 1.0 --flag_use_neg_mask False --flag_far_mode uniform \
     --optimizer_name adamw --learning_rate 5e-5 \
     --lr_scheduler_type cosine --warmup_ratio 0.03 \
-    --num_train_epochs 2 --weight_decay 0.01 \
+    --num_train_epochs 1 --weight_decay 0.01 \
     --bf16 --image_resolution mid \
     --save_strategy epoch --logging_steps 1 --seed 42 \
     --wandb True \
-    --run_name FlagMRL_FastVLM_cls \
+    --run_name FlagMRL_FastVLM_cls_1 \
     "$@"

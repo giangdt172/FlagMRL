@@ -39,7 +39,7 @@ class FlagProjector(nn.Module):
             raise ValueError("flag_eps must be positive and flag_lr nonnegative, both finite.")
         if not math.isfinite(lambda_neg) or lambda_neg < 0:
             raise ValueError("flag_lambda_neg must be nonnegative and finite.")
-        if init not in {"random", "identity", "geneig"}:
+        if init not in {"random", "identity", "spherical", "geneig"}:
             raise ValueError(f"Unknown flag_init: {init}")
         if retraction not in {"svd", "newton_schulz"}:
             raise ValueError(f"Unknown flag_retraction: {retraction}")
@@ -97,22 +97,6 @@ class FlagProjector(nn.Module):
                     "flag_neg_cosine": negative, "flag_gap": positive - negative, "flag_gnorm": norm,
                     "flag_orth_err": orthogonality_error(self.U), "flag_drift": drift,
                     "flag_skipped": 0.0}
-
-    @torch.no_grad()
-    def initialize_geneig(self, near_scatter, far_scatter):
-        """Only initialization may materialize full p-by-p scatter matrices."""
-        with torch.autocast(device_type=self.U.device.type, enabled=False):
-            near, far = near_scatter.float(), far_scatter.float()
-            identity = torch.eye(self.full_dim, device=self.U.device)
-            near, far = (near + near.T) * 0.5, (far + far.T) * 0.5
-            lower = torch.linalg.cholesky(near + self.eps * identity)
-            left = torch.linalg.solve_triangular(lower, far, upper=False)
-            whitened = torch.linalg.solve_triangular(lower, left.T, upper=False).T
-            eigenvalues, eigenvectors = torch.linalg.eigh((whitened + whitened.T) * 0.5)
-            order = torch.argsort(eigenvalues, descending=True)[:self.q_dims[-1]]
-            vectors = torch.linalg.solve_triangular(lower.T, eigenvectors[:, order], upper=True)
-            self.U.copy_(torch.linalg.qr(vectors, mode="reduced").Q)
-            return eigenvalues[order]
 
     def save(self, path):
         path = Path(path)

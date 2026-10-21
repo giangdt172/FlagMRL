@@ -17,6 +17,7 @@ from transformers import (HfArgumentParser, get_constant_schedule,
 from prepare_one_model_training import OneModelTrainer, TrainOneModelCollator, TrainOneModelDataset
 from src.arguments import DataArguments, ModelArguments, TrainingArguments
 from src.MRL import build_criterion
+from src.MRL.flag.initialization import initialize_flag
 from src.utils import is_main_process, print_master, to_device, print_rank
 from src.wandb_logging import WandbLogger
 
@@ -141,59 +142,6 @@ def get_optimizer(model, training_args):
 def ddp_setup():
     torch.cuda.set_device(int(os.environ['LOCAL_RANK']))
     init_process_group(backend="gloo")
-
-
-@torch.no_grad()
-def initialize_geneig(module, loader, args):
-    if args.flag_init != "geneig" or not hasattr(module.model, "flag_projector"):
-        return
-    checkpoint = Path(module.model_args.checkpoint_path or module.model_args.model_name) / "flag_U.pt"
-    if checkpoint.exists():
-        return
-    if args.flag_geneig_batches < 1:
-        raise ValueError("flag_geneig_batches must be positive.")
-    if len(loader) == 0:
-        print_master("Skipped geneig initialization: empty loader; keeping the initial flag basis.")
-        return
-    from src.MRL.base_mrl import contrastive_inputs
-    from src.MRL.flag.flag_math import cov_matmul
-    from src.MRL.flag.pairs import build_pair_weights
-    from src.utils import gather_tensor
-    from torch.nn import functional as F
-    projector = module.model.flag_projector
-    p = projector.full_dim
-    cn, cf = torch.zeros(p, p, device=module.device), torch.zeros(p, p, device=module.device)
-    eye = torch.eye(p, device=module.device)
-    was_training = module.training
-    module.eval()
-    iterator, valid_count = iter(loader), 0
-    try:
-        for _ in range(args.flag_geneig_batches):
-            try:
-                batch = next(iterator)
-            except StopIteration:
-                iterator = iter(loader)
-                batch = next(iterator)
-            batch = to_device(batch, module.device)
-            q, pos, target = contrastive_inputs(module.model, batch)
-            with torch.autocast(device_type=module.device.type, enabled=False):
-                q, pos = F.normalize(q.float(), dim=-1), F.normalize(pos.float(), dim=-1)
-                ids = gather_tensor(batch["pos_id"], keep_local_grad=False) if args.flag_use_neg_mask else None
-                near, far, ok = build_pair_weights(q, pos, target, ids, args.flag_far_mode, args.flag_far_tau)
-                if ok:
-                    cn += cov_matmul(q, pos, near, eye)
-                    cf += cov_matmul(q, pos, far, eye)
-                    valid_count += 1
-        if valid_count and is_main_process():
-            projector.initialize_geneig(cn / valid_count, cf / valid_count)
-        if dist.is_initialized():
-            dist.broadcast(projector.U, src=0)
-    finally:
-        module.train(was_training)
-    if valid_count:
-        print_master(f"Initialized flag from {valid_count} frozen-encoder batches.")
-    else:
-        print_master("Skipped geneig initialization: no valid negative pairs; keeping the initial flag basis.")
 
 
 class Trainer:
@@ -342,7 +290,7 @@ def main():
     projector = getattr(module.model, "flag_projector", None)
     dims = projector.mrl_dims if projector is not None else args.nested_dims
     with WandbLogger(model_args, data_args, args, "train", nested_dims=dims) as logger:
-        initialize_geneig(module, loader, args)
+        initialize_flag(module, loader, args)
         Trainer(module, loader, optimizer, scheduler, criterion, model_args, args, logger=logger).train()
 
 

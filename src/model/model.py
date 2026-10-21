@@ -1,4 +1,4 @@
-"""FlagMRL APIs on top of the unchanged vlm_embed model implementation."""
+"""FlagMRL projection and checkpoint APIs on top of the vlm_embed model."""
 
 import json
 from pathlib import Path

@@ -7,9 +7,10 @@ from torch.nn import functional as F
 from src.utils import gather_tensor
 
 
-def contrastive_inputs(model, batch):
-    query_reps = gather_tensor(model.encode_input(batch["qry"])[0])
-    positive_reps = gather_tensor(model.encode_input(batch["pos"])[0])
+def contrastive_inputs(model, batch, *, normalize=None):
+    encode_kwargs = {} if normalize is None else {"normalize": normalize}
+    query_reps = gather_tensor(model.encode_input(batch["qry"], **encode_kwargs)[0])
+    positive_reps = gather_tensor(model.encode_input(batch["pos"], **encode_kwargs)[0])
     if query_reps.size(0) == 0 or positive_reps.size(0) % query_reps.size(0) or positive_reps.size(0) < query_reps.size(0):
         raise ValueError("Positive count must be a nonzero integer multiple of query count.")
     target_per_query = positive_reps.size(0) // query_reps.size(0)

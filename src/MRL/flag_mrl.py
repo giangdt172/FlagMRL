@@ -8,6 +8,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from src.MRL.base_mrl import contrastive_inputs
+from src.MRL.flag.encoder_loss import encoder_losses
 from src.MRL.flag.pairs import build_pair_weights
 from src.utils import gather_tensor
 
@@ -16,6 +17,9 @@ class FlagMRLLoss(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
+        self.loss_gain_weight = getattr(args, "loss_gain_weight", 0.0)
+        if not math.isfinite(self.loss_gain_weight) or self.loss_gain_weight < 0:
+            raise ValueError("loss_gain_weight must be nonnegative and finite.")
         self.register_buffer("step_idx", torch.zeros((), dtype=torch.long))
         if args.flag_update_every < 1:
             raise ValueError("flag_update_every must be positive.")
@@ -32,7 +36,9 @@ class FlagMRLLoss(nn.Module):
 
     def forward(self, model_trainer, batch):
         model = model_trainer.model
-        q, p, target = contrastive_inputs(model, batch)
+        # Global normalization before U would mix block-local gain gradients
+        # back into the old prefix (and future coordinates) at the raw states.
+        q, p, target = contrastive_inputs(model, batch, normalize=False)
         projector = model.flag_projector
         flag_metrics = {"flag_skipped": 1.0, "flag_step_ms": 0.0}
         if self.training and int(self.step_idx) % self.args.flag_update_every == 0:
@@ -57,23 +63,16 @@ class FlagMRLLoss(nn.Module):
             flag_metrics["flag_step_ms"] = (time.perf_counter() - start) * 1000
         basis = projector.U.detach().clone()
         dims = projector.mrl_dims
-        losses, metrics = [], {}
+        if basis.size(1) < dims[-1]:
+            raise ValueError("The flag basis must cover every MRL dimension, including full_dim.")
         with torch.autocast(device_type=q.device.type, enabled=False):
-            q_full, p_full = q.float(), p.float()
-            # Project into the largest learned flag space once. Every smaller
-            # level is a prefix because the columns of U form a nested flag:
-            # (X @ U)[:, :dim] == X @ U[:, :dim].
-            q_projected = q_full @ basis
-            p_projected = p_full @ basis
-            for dim in dims:
-                q_level = q_full if dim == projector.full_dim else q_projected[:, :dim]
-                p_level = p_full if dim == projector.full_dim else p_projected[:, :dim]
-                scores = model.compute_similarity(F.normalize(q_level, dim=-1), F.normalize(p_level, dim=-1))
-                loss = F.cross_entropy(scores / model_trainer.temperature, target)
-                losses.append(loss)
-                metrics[f"loss_dim_{dim}"] = loss.detach()
-                metrics[f"contrastive_loss_dim_{dim}"] = loss.detach()
-        loss = sum(w * level for w, level in zip(self.level_weights(len(losses)), losses))
+            # One projection per side; all levels, including full_dim, use U.
+            q_projected, p_projected = q.float() @ basis, p.float() @ basis
+            mrl_loss, gain_loss, metrics = encoder_losses(
+                model, q_projected, p_projected, target, dims, self.level_weights(len(dims)),
+                model_trainer.temperature, compute_gain=self.loss_gain_weight > 0)
+            loss = mrl_loss + self.loss_gain_weight * gain_loss
         if self.training:
             self.step_idx.add_(1)
-        return {"loss": loss, "contrastive_loss": loss, **metrics, **flag_metrics}
+        return {"loss": loss, "contrastive_loss": mrl_loss, "mrl_loss": mrl_loss.detach(),
+                "gain_loss": gain_loss.detach(), **metrics, **flag_metrics}

@@ -33,7 +33,12 @@ def build_run_name(model_args, data_args, args, job_type, nested_dims=None):
     dims = args.nested_dims if nested_dims is None else nested_dims
     parts.append("dims" + ("-".join(map(str, dims)) if dims else "full"))
     if job_type == "train" and args.kd_loss_type == "flag_mrl":
-        parts += [f"k{args.block_size}", f"flr{args.flag_lr:g}", f"lam{args.flag_lambda_neg:g}"]
+        parts += [f"k{args.block_size}", f"flr{args.flag_lr:g}", f"lam{args.flag_lambda_neg:g}",
+                  f"gain{args.loss_gain_weight:g}"]
+        parts.append(f"init-{args.flag_init}")
+        if args.flag_init in {"spherical", "geneig"}:
+            batches = args.flag_geneig_batches if args.flag_geneig_batches is not None else args.flag_init_batches
+            parts.append(f"initb{batches}")
     parts += [f"pool-{model_args.pooling}", f"norm{int(model_args.normalize)}",
               f"res-{data_args.image_resolution or 'original'}", f"seed{args.seed}"]
     return "__".join(parts)
