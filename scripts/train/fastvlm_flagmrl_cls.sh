@@ -12,7 +12,7 @@ torchrun \
     train_ddp_one_model.py \
     --model_name "${MODEL_NAME:-apple/FastVLM-0.5B}" \
     --model_backbone llava_qwen2 \
-    --lora --lora_r 64 --lora_alpha 128 \
+    --lora --lora_r 64 --lora_alpha 64 \
     --pooling eos --normalize True --temperature 0.02 \
     --dataset_name TIGER-Lab/MMEB-train \
     --subset_name ImageNet_1K N24News HatefulMemes VOC2007 SUN397 \
