@@ -13,7 +13,6 @@ torchrun \
     --model_name "${MODEL_NAME:-apple/FastVLM-0.5B}" \
     --model_backbone llava_qwen2 \
     --lora --lora_r 64 --lora_alpha 128 \
-    --lora_target_modules q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj \
     --pooling eos --normalize True --temperature 0.02 \
     --dataset_name TIGER-Lab/MMEB-train \
     --subset_name ImageNet_1K N24News HatefulMemes VOC2007 SUN397 \
