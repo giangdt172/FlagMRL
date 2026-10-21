@@ -32,13 +32,13 @@ def evaluation_dims(model, nested_dims):
         resolve_nested_dims(nested_dims, model.full_dim)
         dims = list(nested_dims)
     elif hasattr(model, "flag_projector"):
-        dims = model.flag_projector.q_dims + [model.full_dim]
+        dims = list(model.flag_projector.mrl_dims)
     else:
         dims = []
     if hasattr(model, "flag_projector"):
         for dim in dims:
-            if dim != model.full_dim and dim not in model.flag_projector.q_dims:
-                raise ValueError(f"dim={dim} is not a trained flag level: {model.flag_projector.q_dims}")
+            if dim not in model.flag_projector.mrl_dims:
+                raise ValueError(f"dim={dim} is not a trained MRL level: {model.flag_projector.mrl_dims}")
     return dims
 
 

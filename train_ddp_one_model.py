@@ -151,6 +151,9 @@ def initialize_geneig(module, loader, args):
         return
     if args.flag_geneig_batches < 1:
         raise ValueError("flag_geneig_batches must be positive.")
+    if len(loader) == 0:
+        print_master("Skipped geneig initialization: empty loader; keeping the initial flag basis.")
+        return
     from src.MRL.base_mrl import contrastive_inputs
     from src.MRL.flag.flag_math import cov_matmul
     from src.MRL.flag.pairs import build_pair_weights
@@ -180,15 +183,16 @@ def initialize_geneig(module, loader, args):
                     cn += cov_matmul(q, pos, near, eye)
                     cf += cov_matmul(q, pos, far, eye)
                     valid_count += 1
-        if valid_count == 0:
-            raise ValueError("geneig initialization has no valid negative pairs.")
-        if is_main_process():
+        if valid_count and is_main_process():
             projector.initialize_geneig(cn / valid_count, cf / valid_count)
         if dist.is_initialized():
             dist.broadcast(projector.U, src=0)
     finally:
         module.train(was_training)
-    print_master(f"Initialized flag from {valid_count} frozen-encoder batches.")
+    if valid_count:
+        print_master(f"Initialized flag from {valid_count} frozen-encoder batches.")
+    else:
+        print_master("Skipped geneig initialization: no valid negative pairs; keeping the initial flag basis.")
 
 
 class Trainer:

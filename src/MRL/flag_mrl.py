@@ -1,4 +1,4 @@
-"""Multilevel contrastive loss using a detached nested flag."""
+"""Spherical discriminant flag updates followed by detached multilevel InfoNCE."""
 
 import math
 import time
@@ -48,13 +48,15 @@ class FlagMRLLoss(nn.Module):
                     identities = gather_tensor(batch["pos_id"], keep_local_grad=False)
                 near, far, valid = build_pair_weights(qn, pn, target, identities,
                                                       self.args.flag_far_mode, self.args.flag_far_tau)
+                # No negative annotations are needed: other gathered targets
+                # supply negatives. If none remain, keep U and still run MRL.
                 if valid:
                     flag_metrics = projector.step((qn, pn, near), (qn, pn, far))
             if q.device.type == "cuda":
                 torch.cuda.synchronize(q.device)
             flag_metrics["flag_step_ms"] = (time.perf_counter() - start) * 1000
         basis = projector.U.detach().clone()
-        dims = projector.q_dims + [projector.full_dim]
+        dims = projector.mrl_dims
         losses, metrics = [], {}
         with torch.autocast(device_type=q.device.type, enabled=False):
             q_full, p_full = q.float(), p.float()

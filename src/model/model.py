@@ -31,9 +31,9 @@ class MMEBModel(ReferenceMMEBModel):
                 return F.normalize(reps.float(), dim=-1)
             if hasattr(self, "flag_projector"):
                 projector = self.flag_projector
-                if dim not in projector.q_dims:
-                    raise ValueError(f"dim={dim} is not a trained flag level: {projector.q_dims}")
-                return projector.project(reps, projector.q_dims.index(dim))
+                if dim not in projector.mrl_dims:
+                    raise ValueError(f"dim={dim} is not a trained MRL level: {projector.mrl_dims}")
+                return projector.project_at_dim(reps, dim)
             return F.normalize(reps.float()[..., :dim], dim=-1)
 
     @classmethod
@@ -51,7 +51,9 @@ class MMEBModel(ReferenceMMEBModel):
         if flag_path.exists():
             from src.MRL.flag.flag_projector import FlagProjector
             state = torch.load(flag_path, map_location="cpu", weights_only=True)
-            model.flag_projector = FlagProjector(model.full_dim, state["q_dims"], init="identity")
+            model.flag_projector = FlagProjector(
+                model.full_dim, state["q_dims"], init="identity",
+                block_size=state.get("block_size"), mrl_dims=state.get("mrl_dims"))
             model.flag_projector.load(flag_path)
         if not is_trainable:
             model.requires_grad_(False)

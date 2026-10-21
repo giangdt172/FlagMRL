@@ -1,5 +1,6 @@
-"""Matrix-free scatter products and FP32 Stiefel optimization."""
+"""Spherical discrimination, legacy scatter initialization, and FP32 Stiefel steps."""
 
+import math
 import torch
 
 
@@ -14,21 +15,39 @@ def cov_matmul(Q, P, W, X):
 
 
 @torch.no_grad()
-def flag_loss_and_grad(U, a_col, near, far, eps):
-    if eps <= 0:
-        raise ValueError("The ridge eps must be positive.")
-    with torch.autocast(device_type=U.device.type, enabled=False):
-        U, a_col = U.detach().float(), a_col.detach().float()
-        cf_u, cn_u = cov_matmul(*far, U), cov_matmul(*near, U)
-        numerator = (a_col * (U * cf_u).sum(0)).sum()
-        denominator = (a_col * (U * cn_u).sum(0)).sum() + eps * a_col.sum()
-        if not torch.isfinite(denominator) or denominator <= 0:
-            raise FloatingPointError("The flag trace-ratio denominator is not positive and finite.")
-        rho = numerator / denominator
-        gradient = (-2 / denominator) * (cf_u - rho * (cn_u + eps * U)) * a_col.unsqueeze(0)
-        if not torch.isfinite(gradient).all():
-            raise FloatingPointError("Non-finite flag gradient.")
-        return -rho, rho, gradient
+def flag_loss_and_grad(U, a_col, near, far, eps, lambda_neg=1.0):
+    """Minimize -S_positive + lambda_neg*S_negative with frozen embeddings.
+
+    Pair weights average within each query, then over queries with negatives.
+    Weighted coordinates implement A**(1/2), avoiding a full D-by-D metric.
+    A local autograd leaf includes the derivative of cosine normalization even
+    when this function is called from the no_grad flag-update context.
+    """
+    if not math.isfinite(eps) or eps <= 0:
+        raise ValueError("The squared-norm regularizer eps must be positive and finite.")
+    if not math.isfinite(lambda_neg) or lambda_neg < 0:
+        raise ValueError("flag_lambda_neg must be nonnegative and finite.")
+    with torch.enable_grad(), torch.autocast(device_type=U.device.type, enabled=False):
+        basis = U.detach().float().requires_grad_(True)
+        scale = a_col.detach().float().sqrt()
+
+        def cosine_matrix(pairs):
+            query, target = (t.detach().float() for t in pairs[:2])
+            eq, et = (query @ basis) * scale, (target @ basis) * scale
+            eq = eq / (eq.square().sum(-1, keepdim=True) + eps).sqrt()
+            et = et / (et.square().sum(-1, keepdim=True) + eps).sqrt()
+            return eq @ et.T
+
+        near_cosine = cosine_matrix(near)
+        # Training uses the same query/target pool for both relations.
+        far_cosine = near_cosine if near[0] is far[0] and near[1] is far[1] else cosine_matrix(far)
+        positive = (near_cosine * near[2].detach().float()).sum()
+        negative = (far_cosine * far[2].detach().float()).sum()
+        loss = -positive + lambda_neg * negative
+        gradient, = torch.autograd.grad(loss, basis)
+        if not torch.isfinite(loss) or not torch.isfinite(gradient).all():
+            raise FloatingPointError("Non-finite spherical flag loss or gradient.")
+        return loss.detach(), positive.detach(), negative.detach(), gradient.detach()
 
 
 @torch.no_grad()
@@ -91,8 +110,10 @@ def orthogonality_error(U):
 
 @torch.no_grad()
 def principal_angle(U1, U2):
+    """Largest principal angle; residual sines remain accurate for small steps."""
     with torch.autocast(device_type=U1.device.type, enabled=False):
         if torch.equal(U1, U2):
             return torch.zeros((), device=U1.device, dtype=torch.float32)
-        values = torch.linalg.svdvals(U1.detach().float().T @ U2.detach().float())
-        return values.min().clamp(0, 1).acos()
+        U1, U2 = U1.detach().float(), U2.detach().float()
+        residual = U2 - U1 @ (U1.T @ U2)
+        return torch.linalg.svdvals(residual).max().clamp(0, 1).asin()
