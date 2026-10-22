@@ -3,6 +3,7 @@
 import json
 import pickle
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +21,7 @@ from evaluation.mmeb_baselines.eval_utils import get_pred
 from src.model.model import MMEBModel
 from src.model.processor import load_processor
 from src.utils import resolve_nested_dims, to_device
+from src.wandb_logging import WandbLogger
 
 # vlm_embed uses a different ImageNet subset name for evaluation than for training.
 POS_MOD_DICT = {subset: prompt for subset, prompt in TRAIN_POS_MOD_DICT.items() if subset != "ImageNet_1K"}
@@ -31,13 +33,13 @@ def evaluation_dims(model, nested_dims):
         resolve_nested_dims(nested_dims, model.full_dim)
         dims = list(nested_dims)
     elif hasattr(model, "flag_projector"):
-        dims = model.flag_projector.q_dims + [model.full_dim]
+        dims = list(model.flag_projector.mrl_dims)
     else:
         dims = []
     if hasattr(model, "flag_projector"):
         for dim in dims:
-            if dim != model.full_dim and dim not in model.flag_projector.q_dims:
-                raise ValueError(f"dim={dim} is not a trained flag level: {model.flag_projector.q_dims}")
+            if dim not in model.flag_projector.mrl_dims:
+                raise ValueError(f"dim={dim} is not a trained MRL level: {model.flag_projector.mrl_dims}")
     return dims
 
 
@@ -178,18 +180,26 @@ def main():
     Path(data_args.encode_output_path).mkdir(parents=True, exist_ok=True)
     model = MMEBModel.load(model_args, is_trainable=False).eval().to(args.device, dtype=torch.bfloat16)
     processor = load_processor(model_args, data_args)
-    evaluation_dims(model, args.nested_dims)
+    dims = evaluation_dims(model, args.nested_dims)
     subsets = data_args.subset_name or [None]
-    # First encode every subset; scoring can subsequently run from the CPU caches.
-    for subset in subsets:
-        if read_score(subset_paths(data_args, subset)["score.json"]) is not None:
-            print(f"Found previous eval score, skipping {subset}")
-            continue
-        encode_subset(model, model_args, data_args, args, processor, subset)
-    for subset in tqdm(subsets, desc="Iterate datasets to calculate scores"):
-        result = score_subset(model, model_args, data_args, args, subset)
-        print(json.dumps({"subset": subset, **result}))
+    with WandbLogger(model_args, data_args, args, "eval", nested_dims=dims) as logger:
+        # First encode every subset; scoring can subsequently run from the CPU caches.
+        for subset in subsets:
+            if read_score(subset_paths(data_args, subset)["score.json"]) is not None:
+                print(f"Found previous eval score, skipping {subset}")
+                continue
+            encode_subset(model, model_args, data_args, args, processor, subset)
+        results = []
+        for subset in tqdm(subsets, desc="Iterate datasets to calculate scores"):
+            cached = read_score(subset_paths(data_args, subset)["score.json"]) is not None
+            result = score_subset(model, model_args, data_args, args, subset)
+            print(json.dumps({"subset": subset, **result}), flush=True)
+            logger.log_eval(subset, result, cached=cached)
+            results.append(result)
+        logger.log_eval_average(results)
 
 
 if __name__ == "__main__":
+    start_time = time.perf_counter()
     main()
+    print(f"Total runtime: {time.perf_counter() - start_time:.2f} seconds", flush=True)

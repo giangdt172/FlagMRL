@@ -1,4 +1,4 @@
-# MMEBModel class copied verbatim from vlm_embed; imports scoped to three backbones.
+# MMEBModel from vlm_embed; scoped imports and optional pooling normalization.
 from typing import Dict, Optional
 import os
 import torch
@@ -45,7 +45,10 @@ class MMEBModel(nn.Module):
             "Enable `output_hidden_states=True` for this backbone."
         )
 
-    def encode_input(self, input, output_hidden_states: bool = False, output_attentions: bool = False):
+    def encode_input(self, input, output_hidden_states: bool = False, output_attentions: bool = False,
+                     normalize: Optional[bool] = None):
+        # FlagMRL requests raw pooled states, then normalizes each flag prefix.
+        # None preserves the configured normalization for existing callers.
         INTERNVIDEO2 = "internvideo2"
         if getattr(self, "model_backbone", None) == INTERNVIDEO2:
             if "input_ids" in input.keys():
@@ -102,7 +105,7 @@ class MMEBModel(nn.Module):
                 hidden_states = self.encoder.language_model(**input, return_dict=True, output_hidden_states=output_hidden_states)
             
             hidden_states = hidden_states.hidden_states[-1]
-            pooled_output = self._pooling(hidden_states, input['attention_mask'])
+            pooled_output = self._pooling(hidden_states, input['attention_mask'], normalize=normalize)
             return pooled_output
             """
                 - num_tokens = num_image_tokens - 1 + text_tokens
@@ -127,7 +130,7 @@ class MMEBModel(nn.Module):
             output_hidden_states = hidden_states.hidden_states if output_hidden_states else None
             last_hidden_state = self._extract_last_hidden_state(hidden_states)
             attention_matrix = hidden_states.attentions if hasattr(hidden_states, 'attentions') else None
-            pooled_output = self._pooling(last_hidden_state, input['attention_mask'])
+            pooled_output = self._pooling(last_hidden_state, input['attention_mask'], normalize=normalize)
             print("len image features:", None if image_features is None else image_features.shape)
             return pooled_output, image_features, attention_matrix, output_hidden_states
         elif getattr(self, "model_backbone", None) in [LLAVA_QWEN2, QWEN2_VL]:
@@ -141,7 +144,7 @@ class MMEBModel(nn.Module):
             output_hidden_states = hidden_states.hidden_states if output_hidden_states else None
             last_hidden_state = self._extract_last_hidden_state(hidden_states)
             attention_matrix = hidden_states.attentions if hasattr(hidden_states, 'attentions') else None
-            pooled_output = self._pooling(last_hidden_state, input['attention_mask'])
+            pooled_output = self._pooling(last_hidden_state, input['attention_mask'], normalize=normalize)
 
             return pooled_output, image_features, attention_matrix, output_hidden_states
         elif getattr(self, "model_backbone", None) in [QWEN3_VL]:
@@ -151,7 +154,8 @@ class MMEBModel(nn.Module):
             
             attention_matrix = hidden_states.attentions if hasattr(hidden_states, 'attentions') else None
             last_hidden_state = hidden_states.last_hidden_state
-            pooled_output = self._pooling(last_hidden_state, attention_mask=hidden_states.attention_mask)
+            pooled_output = self._pooling(last_hidden_state, attention_mask=hidden_states.attention_mask,
+                                          normalize=normalize)
             # print("pooled_output shape:", pooled_output.shape)
             # print("last_hidden_state shape:", last_hidden_state.shape)
             return pooled_output, None, attention_matrix, output_hidden_states
@@ -165,7 +169,7 @@ class MMEBModel(nn.Module):
             output_hidden_states = hidden_states.hidden_states if output_hidden_states else None
             last_hidden_state = self._extract_last_hidden_state(hidden_states)
             attention_matrix = hidden_states.attentions if hasattr(hidden_states, 'attentions') else None
-            pooled_output = self._pooling(last_hidden_state, input['attention_mask'])
+            pooled_output = self._pooling(last_hidden_state, input['attention_mask'], normalize=normalize)
 
             return pooled_output, image_features, attention_matrix, output_hidden_states
         """
@@ -176,7 +180,7 @@ class MMEBModel(nn.Module):
             - image_features: (batch, num_image_tokens, embed_dim), 
             - attention_matrix: list of (batch, num_heads, num_tokens, num_tokens)
         """
-    def _pooling(self, last_hidden_state, attention_mask):
+    def _pooling(self, last_hidden_state, attention_mask, normalize: Optional[bool] = None):
         if self.pooling == 'last' or self.pooling == 'eos':
             if getattr(self, "model_backbone", None) in [QWEN3_VL]:
                 # print("Applying pooling for Qwen3VL backbone")
@@ -203,7 +207,8 @@ class MMEBModel(nn.Module):
 
         else:
             raise NotImplementedError
-        if self.normalize:
+        should_normalize = self.normalize if normalize is None else normalize
+        if should_normalize:
             reps = torch.nn.functional.normalize(reps, p=2, dim=-1)
         return reps
 
