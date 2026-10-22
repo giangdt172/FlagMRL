@@ -1,4 +1,4 @@
-"""Spherical discriminant flag updates followed by detached multilevel InfoNCE."""
+"""Spherical flag updates, then multilevel InfoNCE and optional cross-dim KD."""
 
 import math
 import time
@@ -17,6 +17,9 @@ class FlagMRLLoss(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
+        self.lambda_cross = getattr(args, "flag_lambda_cross", 0.0)
+        if not math.isfinite(self.lambda_cross) or self.lambda_cross < 0:
+            raise ValueError("flag_lambda_cross must be nonnegative and finite.")
         self.register_buffer("step_idx", torch.zeros((), dtype=torch.long))
         if args.flag_update_every < 1:
             raise ValueError("flag_update_every must be positive.")
@@ -64,10 +67,10 @@ class FlagMRLLoss(nn.Module):
         with torch.autocast(device_type=q.device.type, enabled=False):
             # One projection per side; all levels, including full_dim, use U.
             q_projected, p_projected = q.float() @ basis, p.float() @ basis
-            mrl_loss, metrics = encoder_losses(
+            loss, metrics = encoder_losses(
                 model, q_projected, p_projected, target, dims, self.level_weights(len(dims)),
-                model_trainer.temperature)
+                model_trainer.temperature, lambda_cross=self.lambda_cross)
         if self.training:
             self.step_idx.add_(1)
-        return {"loss": mrl_loss, "contrastive_loss": mrl_loss, "mrl_loss": mrl_loss.detach(),
+        return {"loss": loss, "contrastive_loss": metrics["mrl_loss"],
                 **metrics, **flag_metrics}

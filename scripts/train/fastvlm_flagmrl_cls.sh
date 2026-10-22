@@ -27,6 +27,7 @@ torchrun \
     --flag_init random --flag_lr 0.1 --flag_eps 1e-4 \
     --flag_retraction svd --flag_update_every 1 \
     --flag_lambda_neg 1.0 --flag_use_neg_mask False --flag_far_mode uniform \
+    --flag_lambda_cross "${FLAG_LAMBDA_CROSS:-0.5}" \
     --optimizer_name adamw --learning_rate 5e-5 \
     --lr_scheduler_type cosine --warmup_ratio 0.03 \
     --num_train_epochs 1 --weight_decay 0.01 \

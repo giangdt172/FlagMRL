@@ -96,6 +96,7 @@ class TrainingArguments(HFTrainingArguments):
     flag_retraction: str = field(default="svd", metadata={"help": "Polar retraction: svd or newton_schulz."})
     flag_update_every: int = field(default=1, metadata={"help": "Update the flag every N micro-batches."})
     flag_level_weights: str = field(default="", metadata={"help": "Comma-separated level weights summing to one; empty means uniform."})
+    flag_lambda_cross: float = field(default=0.0, metadata={"help": "Adjacent-dimension adaptive KL weight for the encoder only; 0 disables KD. Initial trial: 0.25, tune on validation."})
     flag_use_neg_mask: bool = field(default=False, metadata={"help": "Optionally exclude negatives with the same positive identity; default uses all other target indices."})
     flag_far_mode: str = field(default="uniform", metadata={"help": "Negative weighting within each query: uniform (spherical mean loss) or hard."})
     flag_far_tau: float = field(default=0.1, metadata={"help": "Temperature for hard far-pair weighting."})
