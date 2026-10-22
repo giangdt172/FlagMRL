@@ -23,9 +23,7 @@ torchrun \
     --gradient_accumulation_steps 1 \
     --gradient_checkpointing \
     --kd_loss_type flag_mrl \
-    --loss_gain_weight "${LOSS_GAIN_WEIGHT:-1.0}" \
     --nested_dims 64 128 256 512 768 896 \
-    --block_size 64 \
     --flag_init random --flag_lr 0.1 --flag_eps 1e-4 \
     --flag_retraction svd --flag_update_every 1 \
     --flag_lambda_neg 1.0 --flag_use_neg_mask False --flag_far_mode uniform \

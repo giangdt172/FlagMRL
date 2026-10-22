@@ -17,9 +17,6 @@ class FlagMRLLoss(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        self.loss_gain_weight = getattr(args, "loss_gain_weight", 0.0)
-        if not math.isfinite(self.loss_gain_weight) or self.loss_gain_weight < 0:
-            raise ValueError("loss_gain_weight must be nonnegative and finite.")
         self.register_buffer("step_idx", torch.zeros((), dtype=torch.long))
         if args.flag_update_every < 1:
             raise ValueError("flag_update_every must be positive.")
@@ -36,8 +33,7 @@ class FlagMRLLoss(nn.Module):
 
     def forward(self, model_trainer, batch):
         model = model_trainer.model
-        # Global normalization before U would mix block-local gain gradients
-        # back into the old prefix (and future coordinates) at the raw states.
+        # Each projected prefix is normalized separately by the encoder loss.
         q, p, target = contrastive_inputs(model, batch, normalize=False)
         projector = model.flag_projector
         flag_metrics = {"flag_skipped": 1.0, "flag_step_ms": 0.0}
@@ -68,11 +64,10 @@ class FlagMRLLoss(nn.Module):
         with torch.autocast(device_type=q.device.type, enabled=False):
             # One projection per side; all levels, including full_dim, use U.
             q_projected, p_projected = q.float() @ basis, p.float() @ basis
-            mrl_loss, gain_loss, metrics = encoder_losses(
+            mrl_loss, metrics = encoder_losses(
                 model, q_projected, p_projected, target, dims, self.level_weights(len(dims)),
-                model_trainer.temperature, compute_gain=self.loss_gain_weight > 0)
-            loss = mrl_loss + self.loss_gain_weight * gain_loss
+                model_trainer.temperature)
         if self.training:
             self.step_idx.add_(1)
-        return {"loss": loss, "contrastive_loss": mrl_loss, "mrl_loss": mrl_loss.detach(),
-                "gain_loss": gain_loss.detach(), **metrics, **flag_metrics}
+        return {"loss": mrl_loss, "contrastive_loss": mrl_loss, "mrl_loss": mrl_loss.detach(),
+                **metrics, **flag_metrics}

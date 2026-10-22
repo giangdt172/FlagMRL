@@ -12,29 +12,16 @@ from src.utils import resolve_nested_dims
 
 class FlagProjector(nn.Module):
     def __init__(self, full_dim, q_dims=None, init="random", eps=1e-4, lr=0.1, retraction="svd", seed=0,
-                 lambda_neg=1.0, block_size=None, mrl_dims=None):
+                 lambda_neg=1.0):
         super().__init__()
         self.full_dim = int(full_dim)
-        self.block_size = block_size
-        if block_size is not None:
-            if (not isinstance(block_size, int) or isinstance(block_size, bool)
-                    or block_size <= 0 or self.full_dim % block_size):
-                raise ValueError("block_size must be a positive integer dividing full_dim.")
-            block_dims = list(range(block_size, self.full_dim + 1, block_size))
-            if q_dims is not None and list(q_dims) != block_dims:
-                raise ValueError("Flag q_dims must match block_size, 2*block_size, ..., full_dim.")
-            q_dims = block_dims
-        self.q_dims = sorted(q_dims) if q_dims is not None else []
-        if (not self.q_dims or any(not isinstance(d, int) or isinstance(d, bool) for d in self.q_dims)
-                or len(set(self.q_dims)) != len(self.q_dims)
-                or not 0 < self.q_dims[0] <= self.q_dims[-1] <= self.full_dim):
-            raise ValueError("Flag levels must be unique positive integer dimensions at most full_dim.")
-        # Geometry prefixes and encoder supervision dimensions are independent.
-        self.mrl_dims = resolve_nested_dims(self.q_dims if mrl_dims is None else mrl_dims, self.full_dim)
-        if self.full_dim not in self.mrl_dims:
-            self.mrl_dims.append(self.full_dim)
-        if any(d > self.q_dims[-1] and d != self.full_dim for d in self.mrl_dims):
-            raise ValueError("Compressed MRL dimensions cannot exceed the flag basis width.")
+        self.q_dims = resolve_nested_dims(q_dims, self.full_dim)
+        if any(isinstance(d, bool) for d in self.q_dims):
+            raise ValueError("Flag levels must be integer dimensions, not booleans.")
+        if self.full_dim not in self.q_dims:
+            self.q_dims.append(self.full_dim)
+        # Flag subspaces and Matryoshka supervision use the same levels.
+        self.mrl_dims = list(self.q_dims)
         if not math.isfinite(eps) or eps <= 0 or not math.isfinite(lr) or lr < 0:
             raise ValueError("flag_eps must be positive and flag_lr nonnegative, both finite.")
         if not math.isfinite(lambda_neg) or lambda_neg < 0:
@@ -102,7 +89,7 @@ class FlagProjector(nn.Module):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save({"U": self.U.detach().cpu(), "q_dims": self.q_dims, "full_dim": self.full_dim,
-                    "block_size": self.block_size, "mrl_dims": self.mrl_dims}, path)
+                    "mrl_dims": self.mrl_dims}, path)
 
     @torch.no_grad()
     def load(self, path):
@@ -110,8 +97,8 @@ class FlagProjector(nn.Module):
         if state["q_dims"] != self.q_dims or state["full_dim"] != self.full_dim:
             raise ValueError("Flag checkpoint q_dims/full_dim does not match the model.")
         saved_mrl_dims = state.get("mrl_dims", sorted(set(state["q_dims"] + [state["full_dim"]])))
-        if state.get("block_size") != self.block_size or saved_mrl_dims != self.mrl_dims:
-            raise ValueError("Flag checkpoint block_size/MRL dimensions do not match the model.")
+        if saved_mrl_dims != self.mrl_dims:
+            raise ValueError("Flag checkpoint MRL dimensions do not match the Flag subspace dimensions.")
         basis = state["U"].float()
         if basis.shape != self.U.shape or not torch.isfinite(basis).all():
             raise ValueError("Invalid flag checkpoint basis.")

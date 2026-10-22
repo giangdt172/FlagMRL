@@ -81,7 +81,7 @@ class OneModelTrainer(nn.Module):
         args = self.training_args
         dims = resolve_nested_dims(args.nested_dims, self.model.full_dim)
         self.model.flag_projector = FlagProjector(
-            self.model.full_dim, block_size=args.block_size, mrl_dims=dims,
+            self.model.full_dim, q_dims=dims,
             init=args.flag_init, eps=args.flag_eps, lr=args.flag_lr,
             retraction=args.flag_retraction, seed=args.seed,
             lambda_neg=args.flag_lambda_neg).to(self.device)

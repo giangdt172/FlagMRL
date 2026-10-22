@@ -52,8 +52,7 @@ class MMEBModel(ReferenceMMEBModel):
             from src.MRL.flag.flag_projector import FlagProjector
             state = torch.load(flag_path, map_location="cpu", weights_only=True)
             model.flag_projector = FlagProjector(
-                model.full_dim, state["q_dims"], init="identity",
-                block_size=state.get("block_size"), mrl_dims=state.get("mrl_dims"))
+                model.full_dim, state["q_dims"], init="identity")
             model.flag_projector.load(flag_path)
         if not is_trainable:
             model.requires_grad_(False)
