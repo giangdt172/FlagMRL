@@ -177,5 +177,5 @@ pyrightconfig.json
 wandb/
 evaluation/
 training/
-data/
+/data/
 
