@@ -248,7 +248,7 @@ def main():
     device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() and not args.use_cpu else "cpu")
     if device.type == "cuda":
         torch.cuda.set_device(device)
-    module = OneModelTrainer(model_args, args, device)
+    module = OneModelTrainer(model_args, args, device, data_args=data_args)
     dataset = TrainOneModelDataset(data_args, model_args)
     world = dist.get_world_size() if dist.is_initialized() else 1
     rank = dist.get_rank() if dist.is_initialized() else 0

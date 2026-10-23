@@ -5,6 +5,8 @@ from typing import List
 
 from transformers import TrainingArguments as HFTrainingArguments
 
+from src.data.image_utils import resolve_image_resolution
+
 
 @dataclass
 class ModelArguments:
@@ -58,7 +60,7 @@ class DataArguments:
     encode_output_path: str = field(default=None, metadata={"help": "encode output path"})
     max_len: int = field(default=None, metadata={"help": "The maximum total input sequence length after tokenization. Use with caution, since it may truncate text prompts due to large image lengths."})
     embedding_type: str = field(default="", metadata={"help": "embedding type"})
-    image_resolution: str = field(default=None, metadata={"help": "for models i.e. LLaVA-next and Qwen, resize images first, none means using original image resolution. This is only works when `--resize_use_processor false`."})
+    image_resolution: str = field(default=None, metadata={"help": "Maximum image longest side in pixels, e.g. 768, before the backbone processor. Also accepts high/mid/low (legacy presets) or none (original size). Applied when resize_use_processor=false."})
     resize_use_processor: bool = field(default=False, metadata={"help": "Resize visual inputs insides processor, e.g. Qwen2VLImageProcessor, instead of by our code."})
     resize_min_pixels: int = field(default=3136, metadata={"help": "The min pixels of the image to resize the image. This is only works when `--resize_use_processor true`."})
     resize_max_pixels: int = field(default=1003520, metadata={"help": "The max pixels of the image to resize the image. This is only works when `--resize_use_processor true`."})
@@ -74,6 +76,9 @@ class DataArguments:
     eval_image_dir: str = field(default=None, metadata={"help": "Eval Image directory path"})
     pos_only: bool = field(default=False, metadata={"help": "Only use positives"})
     percent_data: float = field(default=1.0, metadata={"help": "percentage of data used for distillation training"})
+
+    def __post_init__(self):
+        resolve_image_resolution(self.image_resolution)
 
 
 @dataclass

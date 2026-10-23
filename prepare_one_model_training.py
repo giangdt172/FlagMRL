@@ -6,32 +6,19 @@ import json
 from pathlib import Path
 
 import torch
-from PIL import Image
 from torch import nn
 from torch.utils.data import Dataset
 
+from src.data.image_utils import load_image, process_image as resize_image
+from src.data.mmeb_utils import POS_MOD_ANSWER, POS_MOD_CLASS_LABEL, POS_MOD_DICT, POS_MOD_IMAGE_CAPTION
 from src.model.model import MMEBModel
-from src.model.processor import VLM_IMAGE_TOKENS, load_processor, process_vlm_inputs_fns
+from src.model.processor import PHI3V, VLM_IMAGE_TOKENS, load_processor, process_vlm_inputs_fns
 from src.utils import resolve_nested_dims
-
-POS_MOD_CLASS_LABEL = "Represent the class label: "
-POS_MOD_IMAGE_CAPTION = "Represent the image caption: "
-POS_MOD_ANSWER = "Represent the answer: "
-POS_MOD_DICT = {
-    **dict.fromkeys(["ImageNet_1K", "HatefulMemes", "SUN397", "N24News", "VOC2007", "Place365", "ImageNet-A", "ImageNet-R", "ObjectNet", "Country211"], POS_MOD_CLASS_LABEL),
-    **dict.fromkeys(["OK-VQA", "A-OKVQA", "DocVQA", "InfographicsVQA", "ChartQA", "Visual7W", "ScienceQA", "GQA", "TextVQA", "VizWiz"], POS_MOD_ANSWER),
-    **dict.fromkeys(["MSCOCO_i2t", "VisualNews_i2t"], POS_MOD_IMAGE_CAPTION),
-}
 
 
 def process_image(image, resolution, max_dim=1024):
-    if image is None:
-        return None
-    limit = {"high": 1024, "mid": 504, "low": 448}.get(resolution, max_dim)
-    if max(image.size) <= limit:
-        return image
-    scale = limit / max(image.size)
-    return image.resize(tuple(max(1, int(side * scale)) for side in image.size))
+    """Use shared resizing while retaining the legacy training high=1024 preset."""
+    return resize_image(image, resolution, max_dim=max_dim)
 
 
 def stable_pos_id(text, image_path):
@@ -41,9 +28,10 @@ def stable_pos_id(text, image_path):
 
 
 class OneModelTrainer(nn.Module):
-    def __init__(self, model_args, training_args, device):
+    def __init__(self, model_args, training_args, device, data_args=None):
         super().__init__()
         self.model_args, self.training_args = model_args, training_args
+        self.data_args = data_args
         self.device = torch.device(device)
         self.temperature = model_args.temperature
         if self.temperature <= 0:
@@ -90,7 +78,7 @@ class OneModelTrainer(nn.Module):
             self.model.flag_projector.load(checkpoint)
 
     def get_processor(self):
-        return load_processor(self.model_args)
+        return load_processor(self.model_args, self.data_args)
 
     def forward(self, criterion, batch):
         return criterion(self, batch)
@@ -136,12 +124,11 @@ class TrainOneModelDataset(Dataset):
     def __len__(self):
         return len(self.train_data)
 
-    def _get_image(self, image_path):
-        if not image_path:
-            return None
-        with Image.open(Path(self.data_args.image_dir or ".") / image_path) as image:
-            result = image.copy()
-        return process_image(result, self.data_args.image_resolution) if self.data_args.image_resolution else result
+    def _get_image(self, img_path):
+        resolution = self.data_args.image_resolution
+        if self.model_args.model_backbone == PHI3V or self.data_args.resize_use_processor:
+            resolution = None
+        return load_image(img_path, self.data_args.image_dir, resolution, max_dim=1024)
 
     def __getitem__(self, index):
         row = self.train_data[index]

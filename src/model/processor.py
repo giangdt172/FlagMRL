@@ -36,7 +36,7 @@ QWEN3_VL= 'qwen3_vl'
 
 MODEL2BACKBONE = {LLAVA_QWEN2: LLAVA_QWEN2, QWEN2_VL: QWEN2_VL, QWEN3_VL: QWEN3_VL}
 SUPPORTED_MODELS = set(MODEL2BACKBONE)
-VLM_IMAGE_TOKENS = {LLAVA_QWEN2: "<image>", QWEN2_VL: "<|image_pad|>", QWEN3_VL: "<|image_pad|>"}
+VLM_IMAGE_TOKENS = {PHI3V: "<|image_1|>", LLAVA_QWEN2: "<image>", QWEN2_VL: "<|image_pad|>", QWEN3_VL: "<|image_pad|>"}
 VLM_VIDEO_TOKENS = {LLAVA_QWEN2: "", QWEN2_VL: "<|video_pad|>", QWEN3_VL: "<|video_pad|>"}
 backbone2model = {LLAVA_QWEN2: LlavaQwen2ForCausalLM, QWEN2_VL: Qwen2VLForConditionalGeneration,
                   QWEN3_VL: Qwen3VLForEmbedding}
@@ -86,10 +86,11 @@ def load_processor(model_args, data_args=None):
 
         model_name_or_path = PeftConfig.from_pretrained(model_args.model_name).base_model_name_or_path if(model_args.init_lora_model) else model_name_or_path
         print(f">>>>>>>>>>>>>>>>>>>>>>>> Processor {model_name_or_path}")
-        image_processor = Qwen2VLImageProcessor.from_pretrained(model_name_or_path)
-        if data_args is not None:
-            image_processor.min_pixels = data_args.resize_min_pixels
-            image_processor.max_pixels = data_args.resize_max_pixels
+        image_processor_kwargs = {} if data_args is None else {
+            "min_pixels": data_args.resize_min_pixels,
+            "max_pixels": data_args.resize_max_pixels,
+        }
+        image_processor = Qwen2VLImageProcessor.from_pretrained(model_name_or_path, **image_processor_kwargs)
         tokenizer = Qwen2TokenizerFast.from_pretrained(model_name_or_path)
         processor = Qwen2VLProcessor.from_pretrained(
             model_name_or_path,

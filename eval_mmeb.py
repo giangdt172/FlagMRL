@@ -16,22 +16,12 @@ from transformers import AutoConfig, HfArgumentParser
 from src.arguments import DataArguments, ModelArguments, TrainingArguments
 from src.data.collator.eval_collator import EvalCollator
 from src.data.dataset.mmeb_dataset import EvalDataset, load_eval_data
+from src.data.mmeb_utils import POS_MOD_ANSWER, POS_MOD_CLASS_LABEL, POS_MOD_DICT, POS_MOD_IMAGE_CAPTION
 from evaluation.mmeb_baselines.eval_utils import get_pred
 from src.model.model import MMEBModel
 from src.model.processor import get_backbone_name, load_processor
 from src.utils import print_rank, resolve_nested_dims
 from src.wandb_logging import WandbLogger
-
-POS_MOD_CLASS_LABEL = "Represent the class label: "
-POS_MOD_IMAGE_CAPTION = "Represent the image caption: "
-POS_MOD_ANSWER = "Represent the answer: "
-POS_MOD_DICT = {
-    **dict.fromkeys(["ImageNet-1K", "HatefulMemes", "SUN397", "N24News", "VOC2007",
-                     "Place365", "ImageNet-A", "ImageNet-R", "ObjectNet", "Country211"], POS_MOD_CLASS_LABEL),
-    **dict.fromkeys(["OK-VQA", "A-OKVQA", "DocVQA", "InfographicsVQA", "ChartQA",
-                     "Visual7W", "ScienceQA", "GQA", "TextVQA", "VizWiz"], POS_MOD_ANSWER),
-    **dict.fromkeys(["MSCOCO_i2t", "VisualNews_i2t"], POS_MOD_IMAGE_CAPTION),
-}
 
 
 def batch_to_device(batch, device):
@@ -68,7 +58,7 @@ def encode_dataset(model, dataset, collator, batch_size, device, bf16=False, sid
     loader = DataLoader(dataset, batch_size=batch_size, collate_fn=collator,
                         shuffle=False, drop_last=False, num_workers=0)
     chunks = []
-    for batch in tqdm(loader, desc=f"Encode {side}"):
+    for batch in loader:
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=bf16):
             output = model(**{side: batch_to_device(batch, device)})
         chunks.append(output[f"{side}_reps"].cpu().detach().float())
@@ -79,14 +69,20 @@ def encode_dataset(model, dataset, collator, batch_size, device, bf16=False, sid
 
 def encode_subset(model, model_args, data_args, args, processor, subset):
     paths = subset_paths(data_args, subset)
+    name = subset or "default"
     collator = EvalCollator(data_args, model_args, processor)
     for side in ("qry", "tgt"):
         if paths[side].exists():
+            print(f"[{name}] {side}: using cached embeddings from {paths[side]}", flush=True)
             continue
+        print(f"[{name}] Loading {side}: {data_args.dataset_name}, split={data_args.dataset_split}",
+              flush=True)
         dataset = EvalDataset(
             data_args=data_args, model_args=model_args, subset=subset,
             text_field=f"{side}_text", img_path_field=f"{side}_img_path",
             mod_instruction=POS_MOD_DICT.get(subset) if side == "tgt" and data_args.tgt_prefix_mod else None)
+        print(f"[{name}] {side}: encoding {len(dataset)} pairs from {len(dataset.eval_data)} rows",
+              flush=True)
         vectors = encode_dataset(model, dataset, collator, args.per_device_eval_batch_size,
                                  args.device, args.bf16 or args.device.type == "cuda", side)
         # Keep the reference cache format: full raw vectors and original pair keys.
@@ -112,7 +108,7 @@ def score_subset(model, model_args, data_args, args, subset):
     paths = subset_paths(data_args, subset)
     previous = read_score(paths["score.json"])
     if previous is not None:
-        print(f"Found previous eval score, skipping {subset}")
+        print(f"[{subset or 'default'}] Using cached score from {paths['score.json']}", flush=True)
         return previous
     with paths["qry"].open("rb") as stream:
         qry_tensor, qry_index = pickle.load(stream)
@@ -126,13 +122,17 @@ def score_subset(model, model_args, data_args, args, subset):
     for tgt_t, pair in zip(tgt_tensor, tgt_index):
         tgt_key2emb[(pair["text"], pair["img_path"])] = tgt_t
     dims = evaluation_dims(model, args.nested_dims)
+    print(f"[{subset or 'default'}] Loading rows for scoring: "
+          f"{data_args.dataset_name}, split={data_args.dataset_split}", flush=True)
     rows = load_eval_data(data_args, model_args, subset)
     if not len(rows):
         raise ValueError("Cannot score an empty dataset.")
+    print(f"[{subset or 'default'}] Scoring {len(rows)} rows with "
+          f"{len(qry_index)} query / {len(tgt_index)} target embeddings", flush=True)
     correct, predictions = 0, []
     nested_correct = {dim: 0 for dim in dims}
     nested_predictions = {dim: [] for dim in dims}
-    for row in tqdm(rows, desc=f"Calculate score - {subset}"):
+    for row in rows:
         keys = list(zip(row["tgt_text"], row["tgt_img_path"]))
         if not keys or len(row["tgt_text"]) != len(row["tgt_img_path"]):
             raise ValueError("MMEB rows need nonempty aligned candidate text/image lists.")
@@ -166,8 +166,10 @@ def score_subset(model, model_args, data_args, args, subset):
 def evaluate_subset(model, model_args, data_args, args, processor, subset):
     """Evaluate one subset using the same persistent caches as the CLI."""
     Path(data_args.encode_output_path).mkdir(parents=True, exist_ok=True)
-    previous = read_score(subset_paths(data_args, subset)["score.json"])
+    score_path = subset_paths(data_args, subset)["score.json"]
+    previous = read_score(score_path)
     if previous is not None:
+        print(f"[{subset or 'default'}] Using cached score from {score_path}", flush=True)
         return previous
     encode_subset(model, model_args, data_args, args, processor, subset)
     return score_subset(model, model_args, data_args, args, subset)
@@ -188,6 +190,11 @@ def main():
     if not data_args.encode_output_path:
         raise ValueError("--encode_output_path is required for evaluation.")
     Path(data_args.encode_output_path).mkdir(parents=True, exist_ok=True)
+    subsets = data_args.subset_name or [None]
+    names = [subset or "default" for subset in subsets]
+    print(f"Evaluation order ({len(subsets)} datasets): {' -> '.join(names)}", flush=True)
+    print(f"Dataset: {data_args.dataset_name}, split={data_args.dataset_split}; "
+          f"output: {data_args.encode_output_path}", flush=True)
     hf_config = AutoConfig.from_pretrained(model_args.model_name, trust_remote_code=True)
     if not model_args.model_backbone:
         model_args.model_backbone = get_backbone_name(hf_config=hf_config, model_type=model_args.model_type)
@@ -198,22 +205,21 @@ def main():
     model.eval()
     model = model.to(args.device, dtype=torch.bfloat16)
     dims = evaluation_dims(model, args.nested_dims)
-    subsets = data_args.subset_name or [None]
     with WandbLogger(model_args, data_args, args, "eval", nested_dims=dims) as logger:
-        # First encode every subset; scoring can subsequently run from the CPU caches.
-        for subset in subsets:
-            if read_score(subset_paths(data_args, subset)["score.json"]) is not None:
-                print(f"Found previous eval score, skipping {subset}")
-                continue
-            encode_subset(model, model_args, data_args, args, processor, subset)
         results = []
-        for subset in tqdm(subsets, desc="Iterate datasets to calculate scores"):
+        cached_count = 0
+        # Finish encoding, scoring, and saving one dataset before starting the next.
+        for index, subset in enumerate(tqdm(subsets, desc="Evaluate datasets"), start=1):
+            print(f"[Dataset {index}/{len(subsets)}] {subset or 'default'}", flush=True)
             cached = read_score(subset_paths(data_args, subset)["score.json"]) is not None
-            result = score_subset(model, model_args, data_args, args, subset)
+            result = evaluate_subset(model, model_args, data_args, args, processor, subset)
             print(json.dumps({"subset": subset, **result}), flush=True)
             logger.log_eval(subset, result, cached=cached)
             results.append(result)
+            cached_count += int(cached)
         logger.log_eval_average(results)
+    print(f"Evaluation complete: {len(results)}/{len(subsets)} datasets "
+          f"({len(results) - cached_count} scored, {cached_count} cached): {', '.join(names)}", flush=True)
 
 
 if __name__ == "__main__":

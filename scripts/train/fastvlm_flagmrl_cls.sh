@@ -31,7 +31,7 @@ torchrun \
     --optimizer_name adamw --learning_rate 5e-5 \
     --lr_scheduler_type cosine --warmup_ratio 0.03 \
     --num_train_epochs 1 --weight_decay 0.01 \
-    --bf16 --image_resolution mid \
+    --bf16 --image_resolution "${IMAGE_RESOLUTION:-448}" \
     --save_strategy epoch --logging_steps 1 --seed 42 \
     --wandb True \
     --run_name FlagMRL_FastVLM_cls_1 \
