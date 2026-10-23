@@ -36,6 +36,7 @@ TRAIN_SUBSETS=(
     OK-VQA
     SUN397
     VOC2007
+    Visual7W
 )
 
 for subset in "${TRAIN_SUBSETS[@]}"; do
