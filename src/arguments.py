@@ -5,8 +5,6 @@ from typing import List
 
 from transformers import TrainingArguments as HFTrainingArguments
 
-from src.data.image_utils import resolve_image_resolution
-
 
 @dataclass
 class ModelArguments:
@@ -60,10 +58,10 @@ class DataArguments:
     encode_output_path: str = field(default=None, metadata={"help": "encode output path"})
     max_len: int = field(default=None, metadata={"help": "The maximum total input sequence length after tokenization. Use with caution, since it may truncate text prompts due to large image lengths."})
     embedding_type: str = field(default="", metadata={"help": "embedding type"})
-    image_resolution: str = field(default=None, metadata={"help": "Maximum image longest side in pixels, e.g. 768, before the backbone processor. Also accepts high/mid/low (legacy presets) or none (original size). Applied when resize_use_processor=false."})
-    resize_use_processor: bool = field(default=False, metadata={"help": "Resize visual inputs insides processor, e.g. Qwen2VLImageProcessor, instead of by our code."})
-    resize_min_pixels: int = field(default=3136, metadata={"help": "The min pixels of the image to resize the image. This is only works when `--resize_use_processor true`."})
-    resize_max_pixels: int = field(default=1003520, metadata={"help": "The max pixels of the image to resize the image. This is only works when `--resize_use_processor true`."})
+    image_resolution: str = field(default=None, metadata={"help": "CSM-VL resizing before backbone preprocessing: high/mid/low; numeric limits apply to train only. Leave unset to keep original size at the dataset stage."})
+    resize_use_processor: bool = field(default=False, metadata={"help": "Compatibility option; one-model train/eval datasets still apply image_resolution, matching CSM-VL."})
+    resize_min_pixels: int = field(default=3136, metadata={"help": "Qwen2-VL processor minimum pixels, applied independently of resize_use_processor, matching CSM-VL."})
+    resize_max_pixels: int = field(default=1003520, metadata={"help": "Qwen2-VL processor maximum pixels, applied independently of resize_use_processor, matching CSM-VL."})
     image_decay_factor: float = field(default=None, metadata={"help": "The image decay factor for resizing temporal images"})
     num_hardneg: int = field(default=0, metadata={"help": "hard negative number"})
     sdibn: bool = field(default=False, metadata={"help": "huggingface model name"})
@@ -76,9 +74,6 @@ class DataArguments:
     eval_image_dir: str = field(default=None, metadata={"help": "Eval Image directory path"})
     pos_only: bool = field(default=False, metadata={"help": "Only use positives"})
     percent_data: float = field(default=1.0, metadata={"help": "percentage of data used for distillation training"})
-
-    def __post_init__(self):
-        resolve_image_resolution(self.image_resolution)
 
 
 @dataclass

@@ -6,7 +6,7 @@ set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
-export OUTPUT_DIR="${OUTPUT_DIR:-training/FlagMRL_FastVLM_cls_1}"
+export OUTPUT_DIR="${OUTPUT_DIR:-training/FlagMRL_FastVLM_cls_3}"
 export CHECKPOINT_PATH="${CHECKPOINT_PATH:-${OUTPUT_DIR}/checkpoint-epoch-0}"
 
 echo "Starting training..."

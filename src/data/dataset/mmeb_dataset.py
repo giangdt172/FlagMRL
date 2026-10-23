@@ -1,11 +1,30 @@
-"""MMEB evaluation pairs following CSM-VL's ordering and instruction protocol."""
-
 import datasets
 from datasets import load_dataset
 from torch.utils.data import Dataset
 
-from src.data.image_utils import load_image, process_image
-from src.model.processor import PHI3V, VLM_IMAGE_TOKENS
+from src.data.image_utils import load_image
+from src.model.processor import VLM_IMAGE_TOKENS
+
+
+def process_image(image, resolution, max_dim=1344):
+    if image is None:
+        return None
+    if resolution == "high":
+        # image = image.resize((1344, 1344))
+        max_dim = 1344
+    elif resolution == "mid":
+        # image = image.resize((672, 672))
+        max_dim = 672
+    elif resolution == "low":
+        # image = image.resize((448, 448))
+        max_dim = 448
+    cur_max_dim = max(image.size)
+    if cur_max_dim > max_dim:
+        scale = max_dim / cur_max_dim
+        new_width = int(image.size[0] * scale)
+        new_height = int(image.size[1] * scale)
+        image = image.resize((new_width, new_height))
+    return image
 
 
 def load_eval_data(data_args, model_args, subset):
@@ -38,15 +57,16 @@ class EvalDataset(Dataset):
     def __getitem__(self, item):
         pair = self.paired_dataset[item]
         text = pair["text"]
-        if self.backbone != PHI3V:
-            text = text.replace(VLM_IMAGE_TOKENS[PHI3V], VLM_IMAGE_TOKENS[self.backbone])
+        text = text.replace("<|image_1|>", VLM_IMAGE_TOKENS[self.backbone])
         return text, self._get_image(pair["img_path"])
 
     def _get_image(self, img_path):
-        resolution = self.data_args.image_resolution
-        if self.backbone == PHI3V or self.data_args.resize_use_processor:
-            resolution = None
-        return load_image(img_path, self.data_args.image_dir, resolution)
+        image = load_image(img_path, self.data_args.image_dir)
+        if image is not None and self.data_args.image_resolution:
+            filename = image.filename
+            image = process_image(image, self.data_args.image_resolution)
+            image.filename = filename
+        return image
 
     def get_paired_data(self, text_field, img_path_field):
         """Deduplicate in input order, retaining repeated scalar image-only rows."""

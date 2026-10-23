@@ -76,8 +76,11 @@ class FastVLMProcessor(ProcessorMixin):
         **kwargs: Unpack[ProcessingKwargs],
     ):
         input_ids = [tokenizer_image_token(text, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt") for text in texts]
+        # Build the mask from lengths so EOS stays visible even when PAD == EOS.
+        attention_mask = torch.nn.utils.rnn.pad_sequence(
+            [torch.ones_like(ids) for ids in input_ids], batch_first=True, padding_value=0
+        )
         input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id)
-        attention_mask = (input_ids != self.tokenizer.pad_token_id).long()
 
         image_tensors = []
         for image in images:

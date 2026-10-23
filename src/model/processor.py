@@ -1,207 +1,75 @@
-# Copied from vlm_embed; only imports and registries are scoped to three backbones.
+"""Processors and model registry for FastVLM, Qwen2-VL, and Qwen3-VL."""
+
 import logging
+
 import PIL
-import torch
-import numpy as np
 from transformers.image_utils import ChannelDimension
-from transformers import AutoTokenizer, AutoModel, AutoProcessor
-from peft import PeftConfig
-from src.utils import print_master, print_rank
+
 from src.model.vlm_backbone.qwen2_vl import Qwen2VLForConditionalGeneration, Qwen2VLProcessor
 from src.model.vlm_backbone.qwen3_vl_embedding.modeling_qwen3_vl_embedding import Qwen3VLForEmbedding
 from src.model.llava.model.language_model.llava_qwen import LlavaQwen2ForCausalLM
 from src.model.llava.processing_fastvlm import FastVLMProcessor
+from src.utils import print_master
 
 logger = logging.getLogger(__name__)
-PHI_IMAGE_TOKEN_MAX_INPUT_ID = int(1e9)
-LLAVA_IMAGE_TOKEN_ID = 32000
-LLAVA_ONEVISION_IMAGE_TOKEN_ID = 151646
-QWEN3_VL_IMAGE_TOKEN_ID = 151655
 
-PHI3V = 'phi3_v'
-LLAVA_NEXT = 'llava_next'
-LLAVA_ONEVISION = 'llava_onevision'
-QWEN2_VL = 'qwen2_vl'
-QWEN2_VL_TOKENSELECTION = 'qwen2_vl'
-QWEN2_5_VL = 'qwen2_5_vl'
-QWEN2_VL_TOKENSELECTION = 'qwen2_vl_tokenselection'
-QWEN2_5_VL_TOKENSELECTION = 'qwen2_5_vl_tokenselection'
-INTERN_VL3 = 'internvl_chat'
-INTERNVIDEO2 = 'internvideo2'
-GME = 'gme'  # QWEN2-VL
-LamRA = 'lamra'  # QWEN2-VL
-COLPALI = 'colpali'  # PaliGemma-3B
-LLAVA_QWEN2 = 'llava_qwen2'
-QWEN3_VL= 'qwen3_vl'
+LLAVA_QWEN2 = "llava_qwen2"
+QWEN2_VL = "qwen2_vl"
+QWEN3_VL = "qwen3_vl"
 
 MODEL2BACKBONE = {LLAVA_QWEN2: LLAVA_QWEN2, QWEN2_VL: QWEN2_VL, QWEN3_VL: QWEN3_VL}
 SUPPORTED_MODELS = set(MODEL2BACKBONE)
-VLM_IMAGE_TOKENS = {PHI3V: "<|image_1|>", LLAVA_QWEN2: "<image>", QWEN2_VL: "<|image_pad|>", QWEN3_VL: "<|image_pad|>"}
+VLM_IMAGE_TOKENS = {LLAVA_QWEN2: "<image>", QWEN2_VL: "<|image_pad|>", QWEN3_VL: "<|image_pad|>"}
 VLM_VIDEO_TOKENS = {LLAVA_QWEN2: "", QWEN2_VL: "<|video_pad|>", QWEN3_VL: "<|video_pad|>"}
-backbone2model = {LLAVA_QWEN2: LlavaQwen2ForCausalLM, QWEN2_VL: Qwen2VLForConditionalGeneration,
-                  QWEN3_VL: Qwen3VLForEmbedding}
+backbone2model = {
+    LLAVA_QWEN2: LlavaQwen2ForCausalLM,
+    QWEN2_VL: Qwen2VLForConditionalGeneration,
+    QWEN3_VL: Qwen3VLForEmbedding,
+}
+
 
 def load_processor(model_args, data_args=None):
-    """
-    Load processor based on VLM backbone.
-    """
-    model_name_or_path = model_args.checkpoint_path if model_args.checkpoint_path else model_args.model_name
-    print_master(f'Loading processor from: {model_name_or_path}')
-    
-    if model_args.model_backbone == PHI3V:
-        from src.model.vlm_backbone.phi3_v.processing_phi3_v import Phi3VProcessor
-        processor = Phi3VProcessor.from_pretrained(
-            model_name_or_path,
-            trust_remote_code=True,
-            num_crops=model_args.num_crops
+    """Load the processor for one of the three supported VLM backbones."""
+    if model_args.model_backbone not in SUPPORTED_MODELS:
+        raise ValueError(
+            f"Unsupported backbone {model_args.model_backbone!r}. "
+            f"Supported backbones: {sorted(SUPPORTED_MODELS)}"
         )
-        processor.tokenizer.padding_side = "right"
-    elif model_args.model_backbone == LLAVA_NEXT:
-        from src.model.vlm_backbone.llava_next.processing_llava_next import LlavaNextProcessor
-        from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True)
-        tokenizer.padding_side = "left"
-        processor = LlavaNextProcessor.from_pretrained(
-            model_name_or_path,
-            trust_remote_code=True,
-            tokenizer=tokenizer
-        )
-    elif model_args.model_backbone == LLAVA_ONEVISION:
-        from src.model.vlm_backbone.llava_onevision.processing_llava_onevision import LlavaOnevisionProcessor
-        from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True)
-        tokenizer.padding_side = "left"
-        processor = LlavaOnevisionProcessor.from_pretrained(
-            model_name_or_path,
-            trust_remote_code=True,
-            tokenizer=tokenizer
-        )
-    elif model_args.model_backbone in [QWEN2_VL, GME, LamRA]:
-        from src.model.vlm_backbone.qwen2_vl.processing_qwen2_vl import Qwen2VLProcessor
-        # from src.model.vlm_backbone.qwen2_vl.image_processing_qwen2_vl import Qwen2VLImageProcessor
-        from transformers import Qwen2VLImageProcessor
-        # from src.model.vlm_backbone.qwen2_vl.tokenization_qwen2_fast import Qwen2TokenizerFast
-        from transformers import Qwen2TokenizerFast
-        print("Load Qwen2-VL processor")
+    model_name_or_path = model_args.checkpoint_path or model_args.model_name
+    print_master(f"Loading processor from: {model_name_or_path}")
 
-        model_name_or_path = PeftConfig.from_pretrained(model_args.model_name).base_model_name_or_path if(model_args.init_lora_model) else model_name_or_path
-        print(f">>>>>>>>>>>>>>>>>>>>>>>> Processor {model_name_or_path}")
-        image_processor_kwargs = {} if data_args is None else {
-            "min_pixels": data_args.resize_min_pixels,
-            "max_pixels": data_args.resize_max_pixels,
-        }
-        image_processor = Qwen2VLImageProcessor.from_pretrained(model_name_or_path, **image_processor_kwargs)
-        tokenizer = Qwen2TokenizerFast.from_pretrained(model_name_or_path)
-        processor = Qwen2VLProcessor.from_pretrained(
-            model_name_or_path,
-            image_processor=image_processor, tokenizer=tokenizer
-        )
-        print("teacher processor loaded here.")
-    elif model_args.model_backbone == QWEN2_VL_TOKENSELECTION:
-        from src.model.vlm_backbone.qwen2_vl_tokenselection.processing_qwen2_vl import Qwen2VLProcessor
-        from src.model.vlm_backbone.qwen2_vl_tokenselection.image_processing_qwen2_vl import Qwen2VLImageProcessor
-        from src.model.vlm_backbone.qwen2_vl_tokenselection.tokenization_qwen2_fast import Qwen2TokenizerFast
+    if model_args.model_backbone == QWEN2_VL:
+        from transformers import Qwen2TokenizerFast, Qwen2VLImageProcessor
+
+        if model_args.init_lora_model:
+            from peft import PeftConfig
+
+            model_name_or_path = PeftConfig.from_pretrained(model_args.model_name).base_model_name_or_path
         image_processor = Qwen2VLImageProcessor.from_pretrained(model_name_or_path)
         if data_args is not None:
-            image_processor.do_resize = data_args.resize_use_processor
-            image_processor.min_pixels = data_args.resize_min_pixels
-            image_processor.max_pixels = data_args.resize_max_pixels
-        
-        tokenizer = Qwen2TokenizerFast.from_pretrained(model_name_or_path)
-        processor = Qwen2VLProcessor.from_pretrained(
-            model_name_or_path,
-            image_processor=image_processor, tokenizer=tokenizer,
-            uigraph_use=model_args.uigraph_use,
-            uigraph_diff=model_args.uigraph_diff,  uigraph_rand=model_args.uigraph_rand,
-            uimask_ratio=model_args.uimask_ratio, uimask_rand=model_args.uimask_rand
-        )
-    elif model_args.model_backbone == QWEN2_5_VL:
-        from src.model.vlm_backbone.qwen2_5_vl.processing_qwen2_5_vl import Qwen2_5_VLProcessor
-        from src.model.vlm_backbone.qwen2_5_vl.image_processing_qwen2_5_vl import Qwen2_5_VLImageProcessor
-        from src.model.vlm_backbone.qwen2_vl.tokenization_qwen2_fast import Qwen2TokenizerFast
-        from transformers import AutoProcessor
-        print(f">>>>>>>>>>>>>>>>>>>>>>>> Processor 2.5 {model_name_or_path}")
-        # image_processor = Qwen2_5_VLImageProcessor.from_pretrained(model_name_or_path)
-        # tokenizer = Qwen2TokenizerFast.from_pretrained(model_name_or_path)
-        # processor = Qwen2_5_VLProcessor.from_pretrained(model_name_or_path, image_processor=image_processor, tokenizer=tokenizer)
-        # processor = Qwen2_5_VLProcessor.from_pretrained(model_name_or_path, image_processor=autoprocessor.image_processor, tokenizer=autoprocessor.tokenizer)
-        processor = AutoProcessor.from_pretrained(model_name_or_path, padding_side='left', max_pixels=data_args.resize_max_pixels, min_pixels = data_args.resize_min_pixels)
-    elif model_args.model_backbone == INTERN_VL3:
-        from transformers import AutoModel, AutoTokenizer
-        print(f">>>>>>>>>>>>>>>>>>>>>>>> Tokenizer InternVL3 {model_name_or_path}")
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True, use_fast=False)
-        tokenizer.padding_side = 'left'
-        class Processor:
-            def __init__(self, tokenizer, num_image_token, template, img_context_token_id, system_message, padding_side, max_pixels, min_pixels):
-                self.tokenizer = tokenizer
-                # self.max_length = max_length
-                self.num_image_token=num_image_token
-                self.template=template
-                self.img_context_token_id=img_context_token_id
-                self.system_message=system_message
-                self.padding_side = padding_side
-                self.max_pixels = max_pixels
-                self.min_pixels = min_pixels
-            def save_pretrained(self, output_dir):
-                self.tokenizer.save_pretrained(output_dir)
-        
-        # processor = Processor(tokenizer, num_image_token=256, template="internvl2_5", system_message='你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。', padding_side='left', max_pixels=int(np.sqrt(data_args.resize_max_pixels)), min_pixels = int(np.sqrt(data_args.resize_min_pixels)))
-        processor = Processor(tokenizer, num_image_token=256, template="internvl2_5", img_context_token_id=151667, system_message='你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。', padding_side='left', max_pixels=int(np.sqrt(data_args.resize_max_pixels)), min_pixels = int(np.sqrt(data_args.resize_min_pixels)))
-        # ! image processor inside the forward function in intern_vl3, num_image_tokens is the number of tokens per tile
-    elif model_args.model_backbone == QWEN2_5_VL_TOKENSELECTION:
-        # TODO: qwen2.5 token selection not working yet
-        from src.model.vlm_backbone.qwen2_5_vl_tokenselection.processing_qwen2_5_vl import Qwen2_5_VLProcessor
-        from src.model.vlm_backbone.qwen2_5_vl_tokenselection.image_processing_qwen2_5_vl import Qwen2_5_VLImageProcessor
-        from src.model.vlm_backbone.qwen2_vl_tokenselection.tokenization_qwen2_fast import Qwen2TokenizerFast
-        image_processor = Qwen2_5_VLImageProcessor.from_pretrained(model_name_or_path)
-        if data_args is not None:
-            image_processor.do_resize = data_args.resize_use_processor
             image_processor.min_pixels = data_args.resize_min_pixels
             image_processor.max_pixels = data_args.resize_max_pixels
         tokenizer = Qwen2TokenizerFast.from_pretrained(model_name_or_path)
-        processor = Qwen2_5_VLProcessor.from_pretrained(
-            model_name_or_path,
-            image_processor=image_processor, tokenizer=tokenizer,
-            uigraph_use=model_args.uigraph_use,
-            uigraph_diff=model_args.uigraph_diff,  uigraph_rand=model_args.uigraph_rand,
-            uimask_ratio=model_args.uimask_ratio, uimask_rand=model_args.uimask_rand
+        return Qwen2VLProcessor.from_pretrained(
+            model_name_or_path, image_processor=image_processor, tokenizer=tokenizer
         )
-    elif model_args.model_backbone == INTERNVIDEO2:
-        return None
-    elif model_args.model_backbone == GME or model_args.model_backbone == LamRA:
-        from src.model.vlm_backbone.qwen2_vl.processing_qwen2_vl import Qwen2VLProcessor
-        processor = Qwen2VLProcessor.from_pretrained(model_args.model_name, min_pixels=256*28*28, max_pixels=1280*28*28)
-    elif model_args.model_backbone == COLPALI:
-        from transformers import AutoProcessor
-        processor = ColPaliProcessor.from_pretrained(model_args.model_name)
-    elif model_args.model_backbone == LLAVA_QWEN2:
-        print("Processor load here for LLAVA-QWEN2")
-        from transformers import CLIPImageProcessor, AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
-        image_processor = CLIPImageProcessor(crop_size={"height": 1024, "width": 1024},
-                                             image_mean=[0.0, 0.0, 0.0],
-                                             image_std=[1.0, 1.0, 1.0],
-                                             size={"shortest_edge": 1024})
-        processor = FastVLMProcessor(
-            image_processor=image_processor,
-            tokenizer=tokenizer
-        )
-    elif model_args.model_backbone == QWEN3_VL:
-        print("Processor load here for QWEN3-VL")
+
+    if model_args.model_backbone == QWEN3_VL:
         from src.model.vlm_backbone.qwen3_vl_embedding.processing_qwen3_vl import Qwen3VLProcessor
-        processor_kwargs = {"trust_remote_code": True, "padding_side": "right"}
-        if data_args is not None:
-            processor_kwargs["max_pixels"] = data_args.resize_max_pixels
-            processor_kwargs["min_pixels"] = data_args.resize_min_pixels
-        processor = Qwen3VLProcessor.from_pretrained(model_name_or_path, **processor_kwargs)
-    else:
-        from transformers import AutoProcessor
-        processor = AutoProcessor.from_pretrained(
-            model_args.processor_name if model_args.processor_name else model_args.model_name,
-            trust_remote_code=True,
-        )
-        print("Teacher processor loaded here.")
-    return processor
+
+        return Qwen3VLProcessor.from_pretrained(model_name_or_path, trust_remote_code=True, padding_side="right")
+
+    from transformers import AutoTokenizer, CLIPImageProcessor
+
+    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name)
+    image_processor = CLIPImageProcessor(
+        crop_size={"height": 1024, "width": 1024},
+        image_mean=[0.0, 0.0, 0.0],
+        image_std=[1.0, 1.0, 1.0],
+        size={"shortest_edge": 1024},
+    )
+    return FastVLMProcessor(image_processor=image_processor, tokenizer=tokenizer)
+
 
 def get_backbone_name(hf_config, model_type=None):
     if model_type is not None:
@@ -214,6 +82,12 @@ def get_backbone_name(hf_config, model_type=None):
 
 def FastVLM_process_fn(model_inputs: dict, processor: FastVLMProcessor, max_length=None):
     texts, visual_inputs = model_inputs['text'], model_inputs['images']
+    eos_token = getattr(processor.tokenizer, "eos_token", None)
+    if eos_token:
+        texts = [
+            text if text.rstrip().endswith(eos_token) else text + eos_token
+            for text in texts
+        ]
     inputs = processor(
         images=visual_inputs,
         texts=texts,
@@ -235,10 +109,7 @@ def Qwen2_VL_process_fn(model_inputs: dict, processor: Qwen2VLProcessor, max_len
         if images is None or (type(images)==list and any(i is None for i in images)):
             # all images must be valid
             inputs = processor(text=[text], images=None, return_tensors="pt", max_length=max_length, truncation=True)
-            input_id = inputs["input_ids"].squeeze().tolist()
-            if isinstance(input_id, int):
-                # in case of empty string, only BOS is included
-                input_id = [input_id]
+            input_id = inputs["input_ids"][0].tolist()
             input_ids.append(input_id)
             pixel_values.append(None)
             image_grid_thw.append(None)
@@ -263,7 +134,7 @@ def Qwen2_VL_process_fn(model_inputs: dict, processor: Qwen2VLProcessor, max_len
                 inputs = processor(text=[text], videos=[images], return_tensors="pt", max_length=None, truncation=False, input_data_format=ChannelDimension.LAST)
             else:
                 raise NotImplementedError
-            input_ids.append(inputs["input_ids"].squeeze().tolist())
+            input_ids.append(inputs["input_ids"][0].tolist())
             if 'pixel_values' in inputs:
                 pixel_values.append(inputs['pixel_values'])
                 image_grid_thw.append(inputs['image_grid_thw'])
@@ -408,7 +279,7 @@ def Qwen3_VL_process_fn(model_inputs: dict, processor, max_length=None, instruct
         videos=videos,
         video_metadata=video_metadata,
         truncation=True,
-        max_length=max_length or 2048,
+        max_length=max_length or 8192,
         padding=True,
         do_resize=False,
         return_tensors='pt',

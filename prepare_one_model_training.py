@@ -9,16 +9,41 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from src.data.image_utils import load_image, process_image as resize_image
+from src.data.image_utils import load_image
 from src.data.mmeb_utils import POS_MOD_ANSWER, POS_MOD_CLASS_LABEL, POS_MOD_DICT, POS_MOD_IMAGE_CAPTION
 from src.model.model import MMEBModel
-from src.model.processor import PHI3V, VLM_IMAGE_TOKENS, load_processor, process_vlm_inputs_fns
+from src.model.processor import VLM_IMAGE_TOKENS, load_processor, process_vlm_inputs_fns
 from src.utils import resolve_nested_dims
 
 
+# Keep this function identical to CSM-VL's one-model training resize.
 def process_image(image, resolution, max_dim=1024):
-    """Use shared resizing while retaining the legacy training high=1024 preset."""
-    return resize_image(image, resolution, max_dim=max_dim)
+    if image is None:
+        return None
+
+    width, height = image.size
+    max_side = max(width, height)
+
+    if resolution == "high":
+        target_max = 1024
+    elif resolution == "mid":
+        target_max = 672
+    elif resolution == "low":
+        target_max = 448
+    else:
+        try:
+            target_max = int(resolution)
+        except (TypeError, ValueError):
+            target_max = max_dim
+
+    # Tính tỉ lệ scale sao cho cạnh lớn nhất = target_max
+    if max_side > target_max:
+        scale = target_max / max_side
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+        image = image.resize((new_width, new_height))
+
+    return image
 
 
 def stable_pos_id(text, image_path):
@@ -125,10 +150,10 @@ class TrainOneModelDataset(Dataset):
         return len(self.train_data)
 
     def _get_image(self, img_path):
-        resolution = self.data_args.image_resolution
-        if self.model_args.model_backbone == PHI3V or self.data_args.resize_use_processor:
-            resolution = None
-        return load_image(img_path, self.data_args.image_dir, resolution, max_dim=1024)
+        image = load_image(img_path, self.data_args.image_dir)
+        if self.data_args.image_resolution:
+            return process_image(image, self.data_args.image_resolution)
+        return image
 
     def __getitem__(self, index):
         row = self.train_data[index]
