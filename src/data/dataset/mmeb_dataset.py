@@ -10,10 +10,19 @@ from prepare_one_model_training import process_image
 from src.model.processor import VLM_IMAGE_TOKENS
 
 
+def load_eval_data(data_args, model_args, subset):
+    """Use the reference query cleanup for both cache keys and scoring rows."""
+    rows = load_dataset(data_args.dataset_name, subset, split=data_args.dataset_split)
+    if (subset in {"WebQA", "EDIS"} and "qry_text" in rows.column_names
+            and model_args.model_backbone == "llava_qwen2"):
+        rows = rows.map(lambda row: {"qry_text": row["qry_text"].replace("<|image_1|>", "").strip()})
+    return rows
+
+
 class EvalDataset(Dataset):
     def __init__(self, data_args, model_args, subset, text_field, img_path_field, mod_instruction=None):
         self.data_args, self.model_args = data_args, model_args
-        self.eval_data = load_dataset(data_args.dataset_name, subset, split=data_args.dataset_split)
+        self.eval_data = load_eval_data(data_args, model_args, subset)
         self.paired_data = self.get_paired_data(text_field, img_path_field)
         self.instruction = (mod_instruction or "") if text_field.startswith("tgt") and data_args.tgt_prefix_mod else ""
 
