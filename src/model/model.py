@@ -53,7 +53,8 @@ class MMEBModel(ReferenceMMEBModel):
             state = torch.load(flag_path, map_location="cpu", weights_only=True)
             model.flag_projector = FlagProjector(
                 model.full_dim, state["q_dims"], init="identity")
-            model.flag_projector.load(flag_path)
+            # Inference needs the basis, independently of the saved MRL loss levels.
+            model.flag_projector.load(flag_path, strict_mrl_dims=is_trainable)
         if not is_trainable:
             model.requires_grad_(False)
             model.eval()

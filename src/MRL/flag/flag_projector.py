@@ -92,12 +92,13 @@ class FlagProjector(nn.Module):
                     "mrl_dims": self.mrl_dims}, path)
 
     @torch.no_grad()
-    def load(self, path):
+    def load(self, path, *, strict_mrl_dims=True):
+        """Load a validated basis; require matching MRL training levels when resuming."""
         state = torch.load(path, map_location=self.U.device, weights_only=True)
         if state["q_dims"] != self.q_dims or state["full_dim"] != self.full_dim:
             raise ValueError("Flag checkpoint q_dims/full_dim does not match the model.")
         saved_mrl_dims = state.get("mrl_dims", sorted(set(state["q_dims"] + [state["full_dim"]])))
-        if saved_mrl_dims != self.mrl_dims:
+        if strict_mrl_dims and saved_mrl_dims != self.mrl_dims:
             raise ValueError("Flag checkpoint MRL dimensions do not match the Flag subspace dimensions.")
         basis = state["U"].float()
         if basis.shape != self.U.shape or not torch.isfinite(basis).all():
