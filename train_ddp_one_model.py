@@ -290,8 +290,14 @@ def main():
     projector = getattr(module.model, "flag_projector", None)
     dims = projector.mrl_dims if projector is not None else args.nested_dims
     with WandbLogger(model_args, data_args, args, "train", nested_dims=dims) as logger:
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        training_start = time.perf_counter()
         initialize_flag(module, loader, args)
         Trainer(module, loader, optimizer, scheduler, criterion, model_args, args, logger=logger).train()
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        logger.log_runtime(time.perf_counter() - training_start)
 
 
 if __name__ == "__main__":
