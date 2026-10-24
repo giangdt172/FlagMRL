@@ -206,6 +206,9 @@ def main():
     model = model.to(args.device, dtype=torch.bfloat16)
     dims = evaluation_dims(model, args.nested_dims)
     with WandbLogger(model_args, data_args, args, "eval", nested_dims=dims) as logger:
+        if args.device.type == "cuda":
+            torch.cuda.synchronize(args.device)
+        evaluation_start = time.perf_counter()
         results = []
         cached_count = 0
         # Finish encoding, scoring, and saving one dataset before starting the next.
@@ -218,6 +221,9 @@ def main():
             results.append(result)
             cached_count += int(cached)
         logger.log_eval_average(results)
+        if args.device.type == "cuda":
+            torch.cuda.synchronize(args.device)
+        logger.log_runtime(time.perf_counter() - evaluation_start)
     print(f"Evaluation complete: {len(results)}/{len(subsets)} datasets "
           f"({len(results) - cached_count} scored, {cached_count} cached): {', '.join(names)}", flush=True)
 

@@ -1,6 +1,7 @@
 """Optional, rank-zero experiment logging for the custom train/eval loops."""
 
 from dataclasses import asdict
+from datetime import timedelta
 import json
 import os
 from pathlib import Path
@@ -117,6 +118,23 @@ class WandbLogger:
         self.run.log(values)
         self._sums.clear()
         self._counts.clear()
+
+    def log_runtime(self, seconds):
+        """Persist completed train/eval wall time, even when W&B is disabled."""
+        if not is_main_process() or int(os.environ.get("RANK", "0")) != 0:
+            return
+        values = {f"{self.job_type}/runtime_seconds": seconds}
+        label = "training" if self.job_type == "train" else "evaluation"
+        print(f"Total {label} time: {seconds:.2f} seconds "
+              f"({timedelta(seconds=round(seconds))})", flush=True)
+        directory = (self.data_args.encode_output_path if self.job_type == "eval"
+                     else self.args.output_dir)
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        (Path(directory) / "runtime.json").write_text(json.dumps(values, indent=4) + "\n")
+        if self.run is not None:
+            self.flush_train()
+            self.run.log(values)
+            self.run.summary.update(values)
 
     def log_eval(self, subset, result, cached=False):
         if self.run is None:
