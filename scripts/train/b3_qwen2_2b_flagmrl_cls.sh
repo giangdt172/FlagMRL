@@ -10,7 +10,7 @@ torchrun \
     --master_addr=127.0.0.1 \
     --master_port=29500 \
     train_ddp_one_model.py \
-    --model_name "${MODEL_NAME:-raghavlite/B3_Qwen2_2B}" \
+    --model_name "${MODEL_NAME:-Qwen/Qwen2-VL-2B}" \
     --model_backbone qwen2_vl \
     --lora --lora_r 64 --lora_alpha 64 \
     --pooling eos --normalize True --temperature 0.02 \
@@ -19,10 +19,10 @@ torchrun \
     --dataset_split original \
     --image_dir "${TRAIN_IMAGE_DIR:-data/MMEB-train}" \
     --output_dir "${OUTPUT_DIR:-training/FlagMRL_B3_Qwen2_2B_cls}" \
-    --per_device_train_batch_size 16 \
+    --per_device_train_batch_size 32 \
     --gradient_accumulation_steps 1 \
     --kd_loss_type flag_mrl \
-    --nested_dims 64 128 256 512 768 1536 \
+    --nested_dims 64 128 256 512 768 896 1536 \
     --flag_init random --flag_lr 0.1 --flag_eps 1e-4 \
     --flag_retraction svd --flag_update_every 1 \
     --flag_lambda_neg 1.0 --flag_use_neg_mask False --flag_far_mode uniform \

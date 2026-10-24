@@ -109,7 +109,9 @@ def Qwen2_VL_process_fn(model_inputs: dict, processor: Qwen2VLProcessor, max_len
         if images is None or (type(images)==list and any(i is None for i in images)):
             # all images must be valid
             inputs = processor(text=[text], images=None, return_tensors="pt", max_length=max_length, truncation=True)
-            input_id = inputs["input_ids"][0].tolist()
+            input_id = inputs["input_ids"].squeeze().tolist()
+            if isinstance(input_id, int):
+                input_id = [input_id]
             input_ids.append(input_id)
             pixel_values.append(None)
             image_grid_thw.append(None)
@@ -134,7 +136,7 @@ def Qwen2_VL_process_fn(model_inputs: dict, processor: Qwen2VLProcessor, max_len
                 inputs = processor(text=[text], videos=[images], return_tensors="pt", max_length=None, truncation=False, input_data_format=ChannelDimension.LAST)
             else:
                 raise NotImplementedError
-            input_ids.append(inputs["input_ids"][0].tolist())
+            input_ids.append(inputs["input_ids"].squeeze().tolist())
             if 'pixel_values' in inputs:
                 pixel_values.append(inputs['pixel_values'])
                 image_grid_thw.append(inputs['image_grid_thw'])

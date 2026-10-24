@@ -59,16 +59,25 @@ class MMEBModel(nn.Module):
         if model_backbone not in (LLAVA_QWEN2, QWEN2_VL, QWEN3_VL):
             raise ValueError(f"Unsupported backbone {model_backbone!r}.")
         request_hidden_states = output_hidden_states or model_backbone in (LLAVA_QWEN2, QWEN2_VL)
+        # CSM-VL always requests and returns these outputs for Qwen2-VL.
+        request_attentions = output_attentions or model_backbone == QWEN2_VL
         hidden_states = self.encoder(
             **input, return_dict=True, output_hidden_states=request_hidden_states,
-            output_attentions=output_attentions,
+            output_attentions=request_attentions,
         )
         attention_matrix = getattr(hidden_states, "attentions", None)
-        saved_hidden_states = hidden_states.hidden_states if output_hidden_states else None
+        saved_hidden_states = (
+            hidden_states.hidden_states
+            if output_hidden_states or model_backbone == QWEN2_VL else None
+        )
         if model_backbone == QWEN3_VL:
             last_hidden_state = hidden_states.last_hidden_state
             attention_mask = hidden_states.attention_mask
             image_features = None
+        elif model_backbone == QWEN2_VL:
+            last_hidden_state = hidden_states.hidden_states[-1]
+            attention_mask = input["attention_mask"]
+            image_features = getattr(hidden_states, "batch_image_embeds", None)
         else:
             last_hidden_state = self._extract_last_hidden_state(hidden_states)
             attention_mask = input["attention_mask"]
