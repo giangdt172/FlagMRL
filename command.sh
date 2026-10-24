@@ -6,11 +6,11 @@ set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
-export OUTPUT_DIR="${OUTPUT_DIR:-training/FlagMRL_FastVLM_vqa}"
+export OUTPUT_DIR="${OUTPUT_DIR:-training/FlagMRL_B3_Qwen2_2B_cls}"
 export CHECKPOINT_PATH="${CHECKPOINT_PATH:-${OUTPUT_DIR}/checkpoint-epoch-0}"
 
 echo "Starting training..."
-bash scripts/train/fastvlm_flagmrl_vqa.sh
+bash scripts/train/b3_qwen2_2b_flagmrl_cls.sh
 
 echo "Training completed. Evaluating ${CHECKPOINT_PATH}..."
-bash scripts/eval/fastvlm_flagmrl_vqa.sh
+bash scripts/eval/b3_qwen2_2b_flagmrl_cls.sh
