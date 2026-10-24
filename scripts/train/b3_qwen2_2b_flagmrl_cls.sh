@@ -19,7 +19,7 @@ torchrun \
     --dataset_split original \
     --image_dir "${TRAIN_IMAGE_DIR:-data/MMEB-train}" \
     --output_dir "${OUTPUT_DIR:-training/FlagMRL_B3_Qwen2_2B_cls}" \
-    --per_device_train_batch_size 32 \
+    --per_device_train_batch_size 16 \
     --gradient_accumulation_steps 1 \
     --kd_loss_type flag_mrl \
     --nested_dims 64 128 256 512 768 1536 \
@@ -30,7 +30,7 @@ torchrun \
     --optimizer_name adamw --learning_rate 5e-5 \
     --lr_scheduler_type cosine --warmup_ratio 0.03 \
     --num_train_epochs 1 --weight_decay 0.01 \
-    --bf16 --image_resolution "${IMAGE_RESOLUTION:-448}" \
+    --bf16 --image_resolution "${IMAGE_RESOLUTION:-336}" \
     --save_strategy epoch --logging_steps 1 --seed 42 \
     --wandb True \
     --run_name FlagMRL_B3_Qwen2_2B_cls \

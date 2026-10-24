@@ -17,7 +17,7 @@ exec "${PYTHON:-python}" eval_mmeb.py \
     --image_dir "${EVAL_IMAGE_DIR:-data/MMEB-eval}" \
     --encode_output_path "${ENCODE_OUTPUT_PATH:-evaluation/FlagMRL_B3_Qwen2_2B_cls/checkpoint-epoch-0}" \
     --per_device_eval_batch_size 8 \
-    --bf16 --image_resolution "${IMAGE_RESOLUTION:-448}" --tgt_prefix_mod \
+    --bf16 --image_resolution "${IMAGE_RESOLUTION:-336}" --tgt_prefix_mod \
     --wandb True \
     --run_name FlagMRL_B3_Qwen2_2B_cls \
     "$@"
