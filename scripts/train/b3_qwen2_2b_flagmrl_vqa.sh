@@ -21,7 +21,7 @@ torchrun \
     --output_dir "${OUTPUT_DIR:-training/FlagMRL_B3_Qwen2_2B_vqa}" \
     --per_device_train_batch_size 16 \
     --gradient_accumulation_steps 1 \
-    --kd_loss_type flag_mrl \
+    --kd_loss_type "${KD_LOSS_TYPE:-flag_mrl}" \
     --nested_dims 64 128 256 512 768 1536 \
     --flag_init random --flag_lr 0.1 --flag_eps 1e-4 \
     --flag_retraction svd --flag_update_every 1 \

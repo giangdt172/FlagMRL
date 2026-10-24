@@ -32,8 +32,10 @@ def build_run_name(model_args, data_args, args, job_type, nested_dims=None):
         parts += [f"bs{args.per_device_eval_batch_size}", f"prefix{int(data_args.tgt_prefix_mod)}"]
     dims = args.nested_dims if nested_dims is None else nested_dims
     parts.append("dims" + ("-".join(map(str, dims)) if dims else "full"))
-    if job_type == "train" and args.kd_loss_type == "flag_mrl":
-        parts += [f"flr{args.flag_lr:g}", f"lam{args.flag_lambda_neg:g}"]
+    if job_type == "train" and args.kd_loss_type in {"flag_mrl", "flag_mrl_trace_ratio"}:
+        parts.append(f"flr{args.flag_lr:g}")
+        if args.kd_loss_type == "flag_mrl":
+            parts.append(f"lam{args.flag_lambda_neg:g}")
         parts.append(f"init-{args.flag_init}")
         if args.flag_init in {"spherical", "geneig"}:
             batches = args.flag_geneig_batches if args.flag_geneig_batches is not None else args.flag_init_batches

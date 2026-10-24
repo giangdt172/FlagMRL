@@ -66,13 +66,24 @@ class FlagProjector(nn.Module):
             return F.normalize(x.float() @ self.U[:, :dim].detach().clone(), dim=-1)
 
     @torch.no_grad()
-    def step(self, near, far):
+    def step(self, near, far, *, objective="spherical"):
         from .flag_math import flag_loss_and_grad, stiefel_step, principal_angle, orthogonality_error
+        if objective not in {"spherical", "trace_ratio"}:
+            raise ValueError(f"Unknown flag objective: {objective}")
         with torch.autocast(device_type=self.U.device.type, enabled=False):
             if not far[2].any():
                 return {"flag_skipped": 1.0}
-            loss, positive, negative, gradient = flag_loss_and_grad(
-                self.U, self.a_col, near, far, self.eps, self.lambda_neg)
+            if objective == "trace_ratio":
+                from .trace_ratio import trace_ratio_loss_and_grad
+                loss, positive, negative, gradient = trace_ratio_loss_and_grad(
+                    self.U, self.a_col, near, far, self.eps)
+                metrics = {"flag_pos_scatter": positive, "flag_neg_scatter": negative,
+                           "flag_trace_ratio": -loss}
+            else:
+                loss, positive, negative, gradient = flag_loss_and_grad(
+                    self.U, self.a_col, near, far, self.eps, self.lambda_neg)
+                metrics = {"flag_pos_cosine": positive, "flag_neg_cosine": negative,
+                           "flag_gap": positive - negative}
             updated, norm = stiefel_step(self.U, gradient, self.lr, self.retraction)
             # The full-dimensional span never changes. Track the largest
             # proper prefix, as the old rectangular basis diagnostic did.
@@ -80,8 +91,7 @@ class FlagProjector(nn.Module):
             drift = (principal_angle(self.U[:, :proper_dims[-1]], updated[:, :proper_dims[-1]])
                      if proper_dims else self.U.new_zeros(()))
             self.U.copy_(updated)
-            return {"flag_loss": loss, "flag_pos_cosine": positive,
-                    "flag_neg_cosine": negative, "flag_gap": positive - negative, "flag_gnorm": norm,
+            return {"flag_loss": loss, **metrics, "flag_gnorm": norm,
                     "flag_orth_err": orthogonality_error(self.U), "flag_drift": drift,
                     "flag_skipped": 0.0}
 

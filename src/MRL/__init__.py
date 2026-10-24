@@ -1,7 +1,9 @@
 from .base_mrl import MatryoshkaContrastiveLoss
 from .flag_mrl import FlagMRLLoss
+from .flag_mrl_trace_ratio import FlagMRLTraceRatioLoss
 
-criterion_dict = {"mrl": MatryoshkaContrastiveLoss, "flag_mrl": FlagMRLLoss}
+criterion_dict = {"mrl": MatryoshkaContrastiveLoss, "flag_mrl": FlagMRLLoss,
+                  "flag_mrl_trace_ratio": FlagMRLTraceRatioLoss}
 
 
 def build_criterion(args):

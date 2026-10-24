@@ -1,4 +1,4 @@
-"""Spherical flag updates, then multilevel InfoNCE and optional cross-dim KD."""
+"""Flag updates, then multilevel InfoNCE and optional cross-dim KD."""
 
 import math
 import time
@@ -14,6 +14,8 @@ from src.utils import gather_tensor
 
 
 class FlagMRLLoss(nn.Module):
+    flag_objective = "spherical"
+
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -56,7 +58,8 @@ class FlagMRLLoss(nn.Module):
                 # No negative annotations are needed: other gathered targets
                 # supply negatives. If none remain, keep U and still run MRL.
                 if valid:
-                    flag_metrics = projector.step((qn, pn, near), (qn, pn, far))
+                    flag_metrics = projector.step(
+                        (qn, pn, near), (qn, pn, far), objective=self.flag_objective)
             if q.device.type == "cuda":
                 torch.cuda.synchronize(q.device)
             flag_metrics["flag_step_ms"] = (time.perf_counter() - start) * 1000

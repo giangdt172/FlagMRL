@@ -88,7 +88,7 @@ class OneModelTrainer(nn.Module):
             enable()
 
     def _maybe_attach_flag_projector(self):
-        if self.training_args.kd_loss_type != "flag_mrl":
+        if self.training_args.kd_loss_type not in {"flag_mrl", "flag_mrl_trace_ratio"}:
             return
         from src.MRL.flag.flag_projector import FlagProjector
         args = self.training_args
@@ -200,6 +200,6 @@ class TrainOneModelCollator:
             "qry": process_student_fn(student_qry_inputs, processor=self.processor, max_length=self.data_args.max_len),
             "pos": process_student_fn(student_pos_inputs, processor=self.processor, max_length=self.data_args.max_len),
         }
-        if self.training_args.kd_loss_type == "flag_mrl":
+        if self.training_args.kd_loss_type in {"flag_mrl", "flag_mrl_trace_ratio"}:
             result["pos_id"] = torch.tensor([i for row in examples for i in row["pos_id"]], dtype=torch.long)
         return result
