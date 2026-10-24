@@ -19,7 +19,7 @@ torchrun \
     --dataset_split original \
     --image_dir "${TRAIN_IMAGE_DIR:-data/MMEB-train}" \
     --output_dir "${OUTPUT_DIR:-training/FlagMRL_B3_Qwen2_2B_vqa}" \
-    --per_device_train_batch_size 32 \
+    --per_device_train_batch_size 16 \
     --gradient_accumulation_steps 1 \
     --kd_loss_type flag_mrl \
     --nested_dims 64 128 256 512 768 896 1536 \
