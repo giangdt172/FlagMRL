@@ -4,6 +4,7 @@ import logging
 
 import PIL
 from transformers.image_utils import ChannelDimension
+from peft import PeftConfig
 
 from src.model.vlm_backbone.qwen2_vl import Qwen2VLForConditionalGeneration, Qwen2VLProcessor
 from src.model.vlm_backbone.qwen3_vl_embedding.modeling_qwen3_vl_embedding import Qwen3VLForEmbedding
@@ -28,29 +29,6 @@ backbone2model = {
 }
 
 
-def _load_qwen2_image_processor(model_name_or_path, data_args=None):
-    from transformers import Qwen2VLImageProcessor
-
-    config, _ = Qwen2VLImageProcessor.get_image_processor_dict(model_name_or_path)
-    config = config.copy()
-    # Legacy checkpoints can serialize size=null. Normalize before __init__,
-    # where Transformers otherwise tries to update that None value.
-    if config.get("size") is None:
-        config["size"] = {
-            "shortest_edge": config.get("min_pixels") or 56 * 56,
-            "longest_edge": config.get("max_pixels") or 28 * 28 * 1280,
-        }
-    if data_args is not None:
-        config["min_pixels"] = data_args.resize_min_pixels
-        config["max_pixels"] = data_args.resize_max_pixels
-        config["size"] = {
-            **config["size"],
-            "shortest_edge": data_args.resize_min_pixels,
-            "longest_edge": data_args.resize_max_pixels,
-        }
-    return Qwen2VLImageProcessor.from_dict(config)
-
-
 def load_processor(model_args, data_args=None):
     """Load the processor for one of the three supported VLM backbones."""
     if model_args.model_backbone not in SUPPORTED_MODELS:
@@ -62,17 +40,26 @@ def load_processor(model_args, data_args=None):
     print_master(f"Loading processor from: {model_name_or_path}")
 
     if model_args.model_backbone == QWEN2_VL:
+        from src.model.vlm_backbone.qwen2_vl.processing_qwen2_vl import Qwen2VLProcessor
+        # from src.model.vlm_backbone.qwen2_vl.image_processing_qwen2_vl import Qwen2VLImageProcessor
+        from transformers import Qwen2VLImageProcessor
+        # from src.model.vlm_backbone.qwen2_vl.tokenization_qwen2_fast import Qwen2TokenizerFast
         from transformers import Qwen2TokenizerFast
+        print("Load Qwen2-VL processor")
 
-        if model_args.init_lora_model:
-            from peft import PeftConfig
-
-            model_name_or_path = PeftConfig.from_pretrained(model_args.model_name).base_model_name_or_path
-        image_processor = _load_qwen2_image_processor(model_name_or_path, data_args)
+        model_name_or_path = PeftConfig.from_pretrained(model_args.model_name).base_model_name_or_path if(model_args.init_lora_model) else model_name_or_path
+        print(f">>>>>>>>>>>>>>>>>>>>>>>> Processor {model_name_or_path}")
+        image_processor = Qwen2VLImageProcessor.from_pretrained(model_name_or_path)
+        if data_args is not None:
+            image_processor.min_pixels = data_args.resize_min_pixels
+            image_processor.max_pixels = data_args.resize_max_pixels
         tokenizer = Qwen2TokenizerFast.from_pretrained(model_name_or_path)
-        return Qwen2VLProcessor.from_pretrained(
-            model_name_or_path, image_processor=image_processor, tokenizer=tokenizer
+        processor = Qwen2VLProcessor.from_pretrained(
+            model_name_or_path,
+            image_processor=image_processor, tokenizer=tokenizer
         )
+        print("teacher processor loaded here.")
+        return processor
 
     if model_args.model_backbone == QWEN3_VL:
         from src.model.vlm_backbone.qwen3_vl_embedding.processing_qwen3_vl import Qwen3VLProcessor

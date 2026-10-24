@@ -103,7 +103,7 @@ class OneModelTrainer(nn.Module):
             self.model.flag_projector.load(checkpoint)
 
     def get_processor(self):
-        return load_processor(self.model_args, self.data_args)
+        return load_processor(self.model_args, None)
 
     def forward(self, criterion, batch):
         return criterion(self, batch)
