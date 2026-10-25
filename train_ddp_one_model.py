@@ -11,7 +11,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.distributed import init_process_group, destroy_process_group
-from transformers import (HfArgumentParser, get_constant_schedule,
+from transformers import (AutoProcessor, AutoTokenizer, HfArgumentParser, get_constant_schedule,
                           get_cosine_schedule_with_warmup, get_linear_schedule_with_warmup, set_seed)
 
 from prepare_one_model_training import OneModelTrainer, TrainOneModelCollator, TrainOneModelDataset
@@ -165,10 +165,7 @@ class Trainer:
         self.train_data.sampler.set_epoch(epoch)
         self.trainer.train()
         accum = args.gradient_accumulation_steps
-        usable_batches = len(self.train_data) // accum * accum
         for batch_idx, batch in enumerate(self.train_data):
-            if batch_idx >= usable_batches:
-                break
             start = time.perf_counter()
             boundary = (batch_idx + 1) % accum == 0
 
@@ -176,6 +173,8 @@ class Trainer:
             loss = loss_dict["loss"]
             if not torch.isfinite(loss):
                 raise FloatingPointError("Non-finite training loss.")
+            # Match VLM_Embed_Matryoshka: backward every microbatch and retain
+            # any unfinished accumulation across the epoch boundary.
             (loss / accum).backward()
             self.micro_step += 1
             if boundary:
@@ -217,10 +216,16 @@ class Trainer:
                 path = self.output_dir / f"checkpoint-epoch-{epoch}"
                 path.mkdir(parents=True, exist_ok=True)
                 self.module.model.save(path)
-                processor = getattr(self.train_data.collate_fn, "processor", None)
-                if processor is None:
-                    processor = self.module.get_processor()
-                processor.save_pretrained(path)
+                # Save the base tokenizer/processor as in VLM_Embed_Matryoshka.
+                # model.save above also preserves the Flag basis and dtype metadata.
+                if self.model_args.model_name:
+                    tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name)
+                    tokenizer.save_pretrained(path)
+                    try:
+                        processor = AutoProcessor.from_pretrained(self.model_args.model_name)
+                        processor.save_pretrained(path)
+                    except Exception as error:
+                        print_rank(f"Warning: Could not save processor: {error}")
                 print_master(f"Saved checkpoint to {path}")
             if dist.is_initialized():
                 dist.barrier()

@@ -7,6 +7,7 @@ from src.model.processor import VLM_IMAGE_TOKENS
 
 
 def process_image(image, resolution, max_dim=1344):
+    """Match VLM_Embed_Matryoshka eval: high/mid/low; other values use max_dim."""
     if image is None:
         return None
     if resolution == "high":

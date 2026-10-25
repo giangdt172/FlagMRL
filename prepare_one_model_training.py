@@ -9,14 +9,14 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from src.data.image_utils import load_image
+from src.data.image_utils import load_image, resize_qwen2vl_train_image
 from src.data.mmeb_utils import POS_MOD_ANSWER, POS_MOD_CLASS_LABEL, POS_MOD_DICT, POS_MOD_IMAGE_CAPTION
 from src.model.model import MMEBModel
 from src.model.processor import VLM_IMAGE_TOKENS, load_processor, process_vlm_inputs_fns
 from src.utils import resolve_nested_dims
 
 
-# Keep this function identical to CSM-VL's one-model training resize.
+# Other backbones retain the CSM-VL training resize; Qwen2-VL uses Matryoshka below.
 def process_image(image, resolution, max_dim=1024):
     if image is None:
         return None
@@ -152,6 +152,8 @@ class TrainOneModelDataset(Dataset):
     def _get_image(self, img_path):
         image = load_image(img_path, self.data_args.image_dir)
         if self.data_args.image_resolution:
+            if self.model_args.model_backbone == "qwen2_vl":
+                return resize_qwen2vl_train_image(image, self.data_args.image_resolution)
             return process_image(image, self.data_args.image_resolution)
         return image
 
