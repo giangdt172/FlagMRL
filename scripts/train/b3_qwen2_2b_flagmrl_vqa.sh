@@ -10,7 +10,7 @@ torchrun \
     --master_addr=127.0.0.1 \
     --master_port=29500 \
     train_ddp_one_model.py \
-    --model_name "${MODEL_NAME:-Qwen/Qwen2-VL-2B}" \
+    --model_name "${MODEL_NAME:-raghavlite/B3_Qwen2_2B}" \
     --model_backbone qwen2_vl \
     --lora --lora_r 64 --lora_alpha 64 \
     --pooling eos --normalize True --temperature 0.02 \

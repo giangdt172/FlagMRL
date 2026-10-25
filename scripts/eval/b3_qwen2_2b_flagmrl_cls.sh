@@ -6,7 +6,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 exec "${PYTHON:-python}" eval_mmeb.py \
-    --model_name "${MODEL_NAME:-Qwen/Qwen2-VL-2B}" \
+    --model_name "${MODEL_NAME:-raghavlite/B3_Qwen2_2B}" \
     --model_backbone qwen2_vl \
     --checkpoint_path "${CHECKPOINT_PATH:-training/FlagMRL_B3_Qwen2_2B_cls/checkpoint-epoch-0}" \
     --lora --lora_r 64 --lora_alpha 64 \

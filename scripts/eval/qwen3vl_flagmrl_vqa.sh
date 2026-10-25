@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Usage: bash scripts/eval/qwen3vl_flagmrl_vqa.sh --checkpoint_path /path/to/checkpoint-epoch-1 --image_dir /data/MMEB-eval
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -12,10 +13,12 @@ exec "${PYTHON:-python}" eval_mmeb.py \
     --pooling eos --normalize True \
     --dataset_name TIGER-Lab/MMEB-eval \
     --subset_name OK-VQA A-OKVQA DocVQA InfographicsVQA ChartQA Visual7W \
-    --dataset_split test --image_dir "${EVAL_IMAGE_DIR:-data/MMEB-eval}" \
+    --dataset_split test \
+    --image_dir "${EVAL_IMAGE_DIR:-data/MMEB-eval}" \
     --encode_output_path "${ENCODE_OUTPUT_PATH:-evaluation/FlagMRL_Qwen3_2B_vqa/checkpoint-epoch-1}" \
     --per_device_eval_batch_size 16 \
     --nested_dims 64 128 256 512 768 1024 2048 \
     --bf16 --image_resolution "${IMAGE_RESOLUTION:-mid}" --tgt_prefix_mod \
-    --wandb True --run_name FlagMRL_Qwen3_2B_vqa \
+    --wandb True \
+    --run_name FlagMRL_Qwen3_2B_vqa \
     "$@"

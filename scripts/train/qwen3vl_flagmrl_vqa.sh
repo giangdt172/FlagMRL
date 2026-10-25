@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Qwen3-VL-Embedding-2B settings follow Matryoshka's base-MRL VQA script.
+# Usage: bash scripts/train/qwen3vl_flagmrl_vqa.sh --image_dir /data/MMEB-train
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-torchrun --standalone --nproc_per_node="${NPROC_PER_NODE:-1}" \
-    --master_port="${MASTER_PORT:-29500}" \
+torchrun \
+    --nproc_per_node=1 \
+    --master_addr=127.0.0.1 \
+    --master_port=29500 \
     train_ddp_one_model.py \
     --model_name "${MODEL_NAME:-Qwen/Qwen3-VL-Embedding-2B}" \
     --model_backbone qwen3_vl \
@@ -17,7 +19,8 @@ torchrun --standalone --nproc_per_node="${NPROC_PER_NODE:-1}" \
     --dataset_split original \
     --image_dir "${TRAIN_IMAGE_DIR:-data/MMEB-train}" \
     --output_dir "${OUTPUT_DIR:-training/FlagMRL_Qwen3_2B_vqa}" \
-    --per_device_train_batch_size 16 --gradient_accumulation_steps 1 \
+    --per_device_train_batch_size 16 \
+    --gradient_accumulation_steps 1 \
     --kd_loss_type "${KD_LOSS_TYPE:-flag_mrl}" \
     --nested_dims 64 128 256 512 768 1024 2048 \
     --flag_init random --flag_lr 0.1 --flag_eps 1e-4 \
@@ -29,5 +32,6 @@ torchrun --standalone --nproc_per_node="${NPROC_PER_NODE:-1}" \
     --num_train_epochs 1 --weight_decay 0.01 \
     --bf16 --image_resolution "${IMAGE_RESOLUTION:-mid}" \
     --save_strategy epoch --logging_steps 1 --seed 42 \
-    --wandb True --run_name FlagMRL_Qwen3_2B_vqa \
+    --wandb True \
+    --run_name FlagMRL_Qwen3_2B_vqa \
     "$@"
