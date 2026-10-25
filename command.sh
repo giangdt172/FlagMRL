@@ -1,31 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: bash command.sh
-# Override MODEL_NAME, TRAIN_IMAGE_DIR, or EVAL_IMAGE_DIR as needed.
-# Per-task paths: CLS_OUTPUT_DIR / VQA_OUTPUT_DIR and
-# CLS_ENCODE_OUTPUT_PATH / VQA_ENCODE_OUTPUT_PATH.
-REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-cd "$REPO_ROOT"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
-for task in cls vqa; do
-    if [[ "$task" == cls ]]; then
-        task_output_dir="${CLS_OUTPUT_DIR:-training/FlagMRL_B3_Qwen2_2B_cls}"
-        task_encode_output_path="${CLS_ENCODE_OUTPUT_PATH:-evaluation/FlagMRL_B3_Qwen2_2B_cls/checkpoint-epoch-0}"
-    else
-        task_output_dir="${VQA_OUTPUT_DIR:-training/FlagMRL_B3_Qwen2_2B_vqa}"
-        task_encode_output_path="${VQA_ENCODE_OUTPUT_PATH:-evaluation/FlagMRL_B3_Qwen2_2B_vqa/checkpoint-epoch-0}"
-    fi
-    task_checkpoint_path="${task_output_dir}/checkpoint-epoch-0"
+mkdir -p evaluation
+eval_run_dir="$(mktemp -d evaluation/cls-run.XXXXXXXXXX)"
 
-    echo "Starting ${task} training..."
-    OUTPUT_DIR="$task_output_dir" \
-        bash "scripts/train/b3_qwen2_2b_flagmrl_${task}.sh"
+# Qwen3VL: train + eval CLS (1 epoch -> checkpoint-epoch-0)
+qwen3_model="${QWEN3_MODEL_NAME:-Qwen/Qwen3-VL-Embedding-2B}"
+qwen3_output="${QWEN3_OUTPUT_DIR:-training/FlagMRL_Qwen3_2B_cls}"
+MODEL_NAME="$qwen3_model" OUTPUT_DIR="$qwen3_output" \
+    bash scripts/train/qwen3vl_flagmrl_cls.sh
+MODEL_NAME="$qwen3_model" CHECKPOINT_PATH="$qwen3_output/checkpoint-epoch-0" \
+ENCODE_OUTPUT_PATH="$eval_run_dir/qwen3vl" \
+    bash scripts/eval/qwen3vl_flagmrl_cls.sh
 
-    echo "${task} training completed. Evaluating ${task_checkpoint_path}..."
-    CHECKPOINT_PATH="$task_checkpoint_path" \
-        ENCODE_OUTPUT_PATH="$task_encode_output_path" \
-        bash "scripts/eval/b3_qwen2_2b_flagmrl_${task}.sh"
-done
-
-echo "CLS and VQA training/evaluation completed."
+# Qwen2VL: train + eval CLS
+qwen2_model="${QWEN2_MODEL_NAME:-Qwen/Qwen2-VL-2B}"
+qwen2_output="${QWEN2_OUTPUT_DIR:-training/FlagMRL_B3_Qwen2_2B_cls}"
+MODEL_NAME="$qwen2_model" OUTPUT_DIR="$qwen2_output" \
+    bash scripts/train/b3_qwen2_2b_flagmrl_cls.sh
+MODEL_NAME="$qwen2_model" CHECKPOINT_PATH="$qwen2_output/checkpoint-epoch-0" \
+ENCODE_OUTPUT_PATH="$eval_run_dir/qwen2vl" \
+    bash scripts/eval/b3_qwen2_2b_flagmrl_cls.sh

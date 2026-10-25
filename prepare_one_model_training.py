@@ -9,14 +9,14 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from src.data.image_utils import load_image, resize_qwen2vl_train_image
+from src.data.image_utils import load_image, resize_matryoshka_train_image
 from src.data.mmeb_utils import POS_MOD_ANSWER, POS_MOD_CLASS_LABEL, POS_MOD_DICT, POS_MOD_IMAGE_CAPTION
 from src.model.model import MMEBModel
 from src.model.processor import VLM_IMAGE_TOKENS, load_processor, process_vlm_inputs_fns
 from src.utils import resolve_nested_dims
 
 
-# Other backbones retain the CSM-VL training resize; Qwen2-VL uses Matryoshka below.
+# FastVLM retains its training resize; both Qwen backbones use Matryoshka below.
 def process_image(image, resolution, max_dim=1024):
     if image is None:
         return None
@@ -119,8 +119,10 @@ class TrainOneModelDataset(Dataset):
             if subset == "WebQA" and "qry" in subset_data.column_names:
                 subset_data = subset_data.map(
                     lambda row: {"qry": row["qry"].replace("<|image_1|>", "").strip()})
-            # Filter before adding instructions and distributed sampling; empty sides cannot form pairs.
-            subset_data = subset_data.filter(self._valid_row)
+            # Qwen3-VL follows Matryoshka: retain dataset rows and skip empty
+            # pairs in __getitem__, after target instructions have been added.
+            if model_args.model_backbone != "qwen3_vl":
+                subset_data = subset_data.filter(self._valid_row)
             instruction = POS_MOD_DICT.get(subset, "")
             positive_texts = [
                 [instruction + (text or "") for text in texts] if isinstance(texts, list)
@@ -152,13 +154,15 @@ class TrainOneModelDataset(Dataset):
     def _get_image(self, img_path):
         image = load_image(img_path, self.data_args.image_dir)
         if self.data_args.image_resolution:
-            if self.model_args.model_backbone == "qwen2_vl":
-                return resize_qwen2vl_train_image(image, self.data_args.image_resolution)
+            if self.model_args.model_backbone in {"qwen2_vl", "qwen3_vl"}:
+                return resize_matryoshka_train_image(image, self.data_args.image_resolution)
             return process_image(image, self.data_args.image_resolution)
         return image
 
     def __getitem__(self, index):
         row = self.train_data[index]
+        if self.model_args.model_backbone == "qwen3_vl":
+            return self._get_qwen3vl_example(row)
         result = {}
         for text_key, image_key, output in (("qry", "qry_image_path", "query"), ("pos_text", "pos_image_path", "pos")):
             texts = row[text_key] if isinstance(row[text_key], list) else [row[text_key]]
@@ -167,6 +171,30 @@ class TrainOneModelDataset(Dataset):
             result[output + "_image"] = [self._get_image(p) for p in paths]
             if output == "pos":
                 result["pos_id"] = [stable_pos_id(t, p) for t, p in zip(texts, paths)]
+        return result
+
+    def _get_qwen3vl_example(self, row):
+        """Keep Matryoshka's pair order/filtering, with IDs for the Flag loss."""
+        def as_list(value):
+            return value if isinstance(value, list) else [value]
+
+        result = {key: [] for key in (
+            "query_text", "query_image", "pos_text", "pos_image", "pos_id")}
+        image_token = VLM_IMAGE_TOKENS["qwen3_vl"]
+        for qry_text, qry_path, pos_text, pos_path in zip(
+            as_list(row["qry"]), as_list(row["qry_image_path"]),
+            as_list(row["pos_text"]), as_list(row["pos_image_path"]),
+        ):
+            query = qry_text.replace("<|image_1|>", image_token)
+            positive = pos_text.replace("<|image_1|>", image_token)
+            query_image, positive_image = self._get_image(qry_path), self._get_image(pos_path)
+            if (not query and query_image is None) or (not positive and positive_image is None):
+                continue
+            result["query_text"].append(query)
+            result["query_image"].append(query_image)
+            result["pos_text"].append(positive)
+            result["pos_image"].append(positive_image)
+            result["pos_id"].append(stable_pos_id(pos_text, pos_path))
         return result
 
 

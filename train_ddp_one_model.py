@@ -11,13 +11,14 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.distributed import init_process_group, destroy_process_group
-from transformers import (AutoProcessor, AutoTokenizer, HfArgumentParser, get_constant_schedule,
+from transformers import (AutoConfig, AutoProcessor, AutoTokenizer, HfArgumentParser, get_constant_schedule,
                           get_cosine_schedule_with_warmup, get_linear_schedule_with_warmup, set_seed)
 
 from prepare_one_model_training import OneModelTrainer, TrainOneModelCollator, TrainOneModelDataset
 from src.arguments import DataArguments, ModelArguments, TrainingArguments
 from src.MRL import build_criterion
 from src.MRL.flag.initialization import initialize_flag
+from src.model.processor import QWEN3_VL, get_backbone_name
 from src.utils import is_main_process, print_master, to_device, print_rank
 from src.wandb_logging import WandbLogger
 
@@ -219,7 +220,12 @@ class Trainer:
                 # Save the base tokenizer/processor as in VLM_Embed_Matryoshka.
                 # model.save above also preserves the Flag basis and dtype metadata.
                 if self.model_args.model_name:
+                    reference_config = None
+                    if getattr(self.model_args, "model_backbone", None) == "qwen3_vl":
+                        reference_config = AutoConfig.from_pretrained(self.model_args.model_name)
                     tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name)
+                    if reference_config is not None:
+                        reference_config.save_pretrained(path)
                     tokenizer.save_pretrained(path)
                     try:
                         processor = AutoProcessor.from_pretrained(self.model_args.model_name)
@@ -248,20 +254,32 @@ def main():
     model_args, data_args, args = parser.parse_args_into_dataclasses(args=normalize_local_rank(sys.argv[1:]))
     if not args.output_dir:
         raise ValueError("--output_dir is required.")
-    set_seed(args.seed)
+    if not model_args.model_backbone:
+        config = AutoConfig.from_pretrained(model_args.model_name, trust_remote_code=True)
+        model_args.model_backbone = get_backbone_name(hf_config=config)
+    # Matryoshka's custom Qwen3-VL loop does not seed model initialization.
+    # Flag initialization still uses its own explicit seed.
+    if model_args.model_backbone != QWEN3_VL:
+        set_seed(args.seed)
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() and not args.use_cpu else "cpu")
     if device.type == "cuda":
         torch.cuda.set_device(device)
-    module = OneModelTrainer(model_args, args, device, data_args=data_args)
-    dataset = TrainOneModelDataset(data_args, model_args)
+    if model_args.model_backbone == QWEN3_VL:
+        # Match the reference's dataset-before-model initialization order.
+        dataset = TrainOneModelDataset(data_args, model_args)
+        module = OneModelTrainer(model_args, args, device, data_args=data_args)
+    else:
+        module = OneModelTrainer(model_args, args, device, data_args=data_args)
+        dataset = TrainOneModelDataset(data_args, model_args)
     world = dist.get_world_size() if dist.is_initialized() else 1
     rank = dist.get_rank() if dist.is_initialized() else 0
     sampler = DistributedSampler(dataset, num_replicas=world, rank=rank, shuffle=True)
     loader = DataLoader(dataset, batch_size=args.per_device_train_batch_size, sampler=sampler,
                         collate_fn=TrainOneModelCollator(module.get_processor(), model_args, data_args, args),
                         drop_last=True, num_workers=0, pin_memory=False,
-                        generator=torch.Generator().manual_seed(args.seed))
+                        generator=None if model_args.model_backbone == QWEN3_VL
+                        else torch.Generator().manual_seed(args.seed))
     for name, parameter in module.model.named_parameters():
         if "mm_projector" in name or "multi_modal_projector" in name:
             parameter.requires_grad_(True)

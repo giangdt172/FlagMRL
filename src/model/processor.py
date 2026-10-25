@@ -64,7 +64,11 @@ def load_processor(model_args, data_args=None):
     if model_args.model_backbone == QWEN3_VL:
         from src.model.vlm_backbone.qwen3_vl_embedding.processing_qwen3_vl import Qwen3VLProcessor
 
-        return Qwen3VLProcessor.from_pretrained(model_name_or_path, trust_remote_code=True, padding_side="right")
+        processor_kwargs = {"trust_remote_code": True, "padding_side": "right"}
+        if data_args is not None:
+            processor_kwargs["max_pixels"] = data_args.resize_max_pixels
+            processor_kwargs["min_pixels"] = data_args.resize_min_pixels
+        return Qwen3VLProcessor.from_pretrained(model_name_or_path, **processor_kwargs)
 
     from transformers import AutoTokenizer, CLIPImageProcessor
 
@@ -87,14 +91,20 @@ def get_backbone_name(hf_config, model_type=None):
     print(f"Determined model backbone: {model_backbone}")
     return MODEL2BACKBONE[hf_config.model_type]
 
-def FastVLM_process_fn(model_inputs: dict, processor: FastVLMProcessor, max_length=None):
-    texts, visual_inputs = model_inputs['text'], model_inputs['images']
+def _append_eos(texts, processor):
+    """Append the tokenizer's EOS once, shared by train and eval backbones."""
     eos_token = getattr(processor.tokenizer, "eos_token", None)
     if eos_token:
-        texts = [
+        return [
             text if text.rstrip().endswith(eos_token) else text + eos_token
             for text in texts
         ]
+    return texts
+
+
+def FastVLM_process_fn(model_inputs: dict, processor: FastVLMProcessor, max_length=None):
+    texts, visual_inputs = model_inputs['text'], model_inputs['images']
+    texts = _append_eos(texts, processor)
     inputs = processor(
         images=visual_inputs,
         texts=texts,
@@ -105,6 +115,7 @@ def Qwen2_VL_process_fn(model_inputs: dict, processor: Qwen2VLProcessor, max_len
     # TODO: set separate max_len for text/visual inputs, currently max_length is only applied to text-only data
     input_ids, pixel_values, image_grid_thw, pixel_values_videos, video_grid_thw = [], [], [], [], []
     texts, visual_inputs = model_inputs['text'], model_inputs['images']
+    texts = _append_eos(texts, processor)
     image_exists = False
     vlm_image_token, vlm_video_token = VLM_IMAGE_TOKENS[QWEN2_VL], VLM_VIDEO_TOKENS[QWEN2_VL]
     # import ipdb; ipdb.set_trace()
@@ -281,6 +292,9 @@ def Qwen3_VL_process_fn(model_inputs: dict, processor, max_length=None, instruct
     else:
         videos, video_metadata = None, None
     
+    # Append after templating (including fallback) so EOS follows the generation prompt.
+    chat_texts = _append_eos(chat_texts, processor)
+
     # Step 4: Process through processor (tokenize + vision encoding)
     inputs = processor(
         text=chat_texts,
@@ -288,7 +302,7 @@ def Qwen3_VL_process_fn(model_inputs: dict, processor, max_length=None, instruct
         videos=videos,
         video_metadata=video_metadata,
         truncation=True,
-        max_length=max_length or 8192,
+        max_length=max_length or 2048,
         padding=True,
         do_resize=False,
         return_tensors='pt',

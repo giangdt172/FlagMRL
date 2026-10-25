@@ -1,10 +1,10 @@
-"""Image loading and the Qwen2-VL Matryoshka training resize."""
+"""Image loading and Matryoshka's Qwen training resize."""
 
 import os
 from PIL import Image
 
 
-def resize_qwen2vl_train_image(image, resolution, max_dim=1024):
+def resize_matryoshka_train_image(image, resolution, max_dim=1024):
     """Match VLM_Embed_Matryoshka-new_ap's one-model training resize."""
     if image is None:
         return None
@@ -28,6 +28,10 @@ def resize_qwen2vl_train_image(image, resolution, max_dim=1024):
         image = image.resize((new_width, new_height))
 
     return image
+
+
+# Compatibility for existing Qwen2-VL callers.
+resize_qwen2vl_train_image = resize_matryoshka_train_image
 
 
 def load_image(img_path, image_dir):

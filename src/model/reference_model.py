@@ -82,7 +82,7 @@ class MMEBModel(nn.Module):
             last_hidden_state = self._extract_last_hidden_state(hidden_states)
             attention_mask = input["attention_mask"]
             image_features = getattr(hidden_states, "batch_image_embeds", None)
-        # Keep CSM-VL pooling unchanged; FlagMRL can request raw pooled states
+        # Keep reference pooling unchanged; FlagMRL can request raw pooled states
         # through a temporary context without mutating the model configuration.
         pooling_context = self
         if normalize is not None and normalize != self.normalize:
@@ -92,7 +92,7 @@ class MMEBModel(nn.Module):
         pooled_output = MMEBModel._pooling(pooling_context, last_hidden_state, attention_mask)
         return pooled_output, image_features, attention_matrix, saved_hidden_states
 
-    # Copied verbatim from CSM-VL/src/model/model.py, including backbone behavior.
+    # Identical to VLM_Embed_Matryoshka's pooling, including backbone behavior.
     def _pooling(self, last_hidden_state, attention_mask):
         if self.pooling == 'last' or self.pooling == 'eos':
             if getattr(self, "model_backbone", None) in [QWEN3_VL]:
